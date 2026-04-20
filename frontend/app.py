@@ -1,5 +1,5 @@
 """
-Streamlit Frontend with Image Cropping
+Streamlit Frontend with Mouse Cropper
 """
 
 import io
@@ -50,31 +50,6 @@ def predict(image_bytes, ph):
         return response.json() if response.status_code == 200 else {"error": "API error"}
     except Exception as e:
         return {"error": str(e)}
-
-
-def simple_crop_interface(image):
-    """Simple crop interface using sliders"""
-    st.markdown("### ✂️ Crop Image")
-    st.info("Adjust the sliders to select the region containing the cuvette")
-    
-    width, height = image.size
-    
-    # Default to center 50% of image
-    col1, col2 = st.columns(2)
-    with col1:
-        left = st.slider("Left", 0, width - 100, width // 4)
-        top = st.slider("Top", 0, height - 100, height // 4)
-    with col2:
-        right = st.slider("Right", left + 50, width, 3 * width // 4)
-        bottom = st.slider("Bottom", top + 50, height, 3 * height // 4)
-    
-    # Crop image
-    cropped = image.crop((left, top, right, bottom))
-    
-    # Show preview
-    st.image(cropped, caption="Cropped Region", use_container_width=True)
-    
-    return cropped
 
 
 def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
@@ -197,7 +172,7 @@ def main():
         st.markdown("---")
         st.markdown("### Instructions")
         st.markdown("1. Upload photo")
-        st.markdown("2. Crop to cuvette region")
+        st.markdown("2. Draw box around cuvette")
         st.markdown("3. Enter pH")
         st.markdown("4. Click Predict")
         
@@ -224,19 +199,41 @@ def main():
             # Load image
             image = Image.open(uploaded)
             
-            # Show original
-            st.image(image, caption="Original Image", use_container_width=True)
-            
-            # Crop interface
-            cropped_image = simple_crop_interface(image)
-            
-            # Save to session state
-            st.session_state.cropped_image = cropped_image
-            
-            # Convert to bytes for API
-            img_byte_arr = io.BytesIO()
-            cropped_image.save(img_byte_arr, format='JPEG')
-            img_byte_arr.seek(0)
+            # Try to use streamlit-cropper
+            try:
+                from streamlit_cropper import st_cropper
+                
+                st.markdown("### ✂️ Draw a box around the cuvette")
+                
+                # Show cropper
+                cropped_image = st_cropper(
+                    image,
+                    aspect_ratio=(1, 1),  # Square crop
+                    box_color='#FF0000',
+                    return_type='image'
+                )
+                
+                # Save to session state
+                st.session_state.cropped_image = cropped_image
+                
+                # Show preview
+                st.image(cropped_image, caption="Selected Region", use_container_width=True)
+                
+            except ImportError:
+                # Fallback to simple center crop
+                st.warning("streamlit-cropper not installed. Using center crop.")
+                st.info("To enable mouse cropping, add 'streamlit-cropper' to requirements.txt")
+                
+                # Center crop 50%
+                width, height = image.size
+                left = width // 4
+                top = height // 4
+                right = 3 * width // 4
+                bottom = 3 * height // 4
+                
+                cropped_image = image.crop((left, top, right, bottom))
+                st.session_state.cropped_image = cropped_image
+                st.image(cropped_image, caption="Center Region (50%)", use_container_width=True)
         
         ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
         
@@ -301,7 +298,7 @@ def main():
         if uploaded and st.session_state.cropped_image:
             st.image(st.session_state.cropped_image, caption="Selected Region", use_container_width=True)
         else:
-            st.info("Upload a photo and crop to the cuvette region")
+            st.info("Upload a photo and draw a box around the cuvette")
         
         # Calculation example
         st.markdown("---")
