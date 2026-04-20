@@ -55,21 +55,6 @@ def predict(image_bytes, ph):
 def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
     """
     精确计算铬物种浓度（基于化学平衡常数）
-    
-    反应体系：
-    1) H2CrO4 ⇌ H+ + HCrO4-     Ka1 = 0.0294
-    2) HCrO4- ⇌ H+ + CrO4^2-    Ka2 = 1.26×10^-6
-    3) 2HCrO4- ⇌ Cr2O7^2- + H2O  K_dimer = 10^2.2
-    
-    物料平衡：C_total = [H2CrO4] + [HCrO4-] + [CrO4^2-] + 2[Cr2O7^2-]
-    
-    参数：
-    - C_total: 总铬浓度 (M)
-    - pH: pH 值
-    - Ka1: 第一解离常数 = 0.0294 (pKa1 = 1.53)
-    - Ka2: 第二解离常数 = 1.26×10^-6 (pKa2 = 5.90)
-    
-    返回：各物种浓度 (M)
     """
     import math
     
@@ -78,28 +63,23 @@ def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
     # 基于 H2CrO4 的解离，计算各单体物种的分布系数
     denom = H**2 + Ka1*H + Ka1*Ka2
     
-    alpha_H2CrO4 = H**2 / denom          # H2CrO4 分数
-    alpha_HCrO4 = Ka1 * H / denom        # HCrO4- 分数
-    alpha_CrO4 = Ka1 * Ka2 / denom       # CrO4^2- 分数
+    alpha_H2CrO4 = H**2 / denom
+    alpha_HCrO4 = Ka1 * H / denom
+    alpha_CrO4 = Ka1 * Ka2 / denom
     
-    # 二聚平衡：2HCrO4- ⇌ Cr2O7^2- + H2O
-    # 文献报道的二聚常数约为 K = 10^2.2 (mol/L)^-1
+    # 二聚平衡常数
     K_dimer = 10**2.2
     
-    # 根据 pH 确定二聚程度
     if pH <= 4:
-        # 酸性条件：考虑二聚
         C_monomer = C_total * (alpha_HCrO4 + alpha_CrO4)
-        
-        # 解二次方程: 2*K_dimer*x^2 + x - C_monomer = 0
         a = 2 * K_dimer
         b = 1
         c = -C_monomer
         
         discriminant = b**2 - 4*a*c
         if discriminant >= 0:
-            x = (-b + math.sqrt(discriminant)) / (2*a)  # [HCrO4-]
-            y = K_dimer * x**2  # [Cr2O7^2-]
+            x = (-b + math.sqrt(discriminant)) / (2*a)
+            y = K_dimer * x**2
         else:
             x = C_monomer
             y = 0
@@ -107,19 +87,14 @@ def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
         HCrO4 = x
         Cr2O7 = y
         CrO4 = C_total * alpha_CrO4 * 0.1
-        H2CrO4 = C_total * alpha_H2CrO4 * 0.1
         
     elif pH >= 8:
-        # 碱性条件：几乎无二聚
         HCrO4 = C_total * alpha_HCrO4
         CrO4 = C_total * alpha_CrO4
         Cr2O7 = 0
-        H2CrO4 = C_total * alpha_H2CrO4
         
     else:
-        # 过渡区 (pH 4-8)
         f_dimer = (8 - pH) / 4
-        
         C_monomer = C_total * (alpha_HCrO4 + alpha_CrO4)
         
         if f_dimer > 0:
@@ -138,15 +113,12 @@ def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
             HCrO4 = x
             Cr2O7 = y
             CrO4 = C_total * alpha_CrO4 * (1 - f_dimer*0.5)
-            H2CrO4 = C_total * alpha_H2CrO4
         else:
             HCrO4 = C_total * alpha_HCrO4
             CrO4 = C_total * alpha_CrO4
             Cr2O7 = 0
-            H2CrO4 = C_total * alpha_H2CrO4
     
     return {
-        'H2CrO4': H2CrO4,
         'HCrO4-': HCrO4,
         'CrO4^2-': CrO4,
         'Cr2O7^2-': Cr2O7
@@ -208,7 +180,7 @@ def main():
                 # Show cropper
                 cropped_image = st_cropper(
                     image,
-                    aspect_ratio=(1, 1),  # Square crop
+                    aspect_ratio=None,  # Free aspect ratio
                     box_color='#FF0000',
                     return_type='image'
                 )
@@ -216,13 +188,9 @@ def main():
                 # Save to session state
                 st.session_state.cropped_image = cropped_image
                 
-                # Show preview
-                st.image(cropped_image, caption="Selected Region", use_container_width=True)
-                
             except ImportError:
                 # Fallback to simple center crop
                 st.warning("streamlit-cropper not installed. Using center crop.")
-                st.info("To enable mouse cropping, add 'streamlit-cropper' to requirements.txt")
                 
                 # Center crop 50%
                 width, height = image.size
@@ -233,7 +201,6 @@ def main():
                 
                 cropped_image = image.crop((left, top, right, bottom))
                 st.session_state.cropped_image = cropped_image
-                st.image(cropped_image, caption="Center Region (50%)", use_container_width=True)
         
         ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
         
@@ -276,10 +243,9 @@ def main():
                 
                 # Species calculation
                 st.markdown("---")
-                st.subheader("🧪 Species Concentration (Equilibrium Calculation)")
-                st.caption("Based on Ka1=0.0294, Ka2=1.26×10⁻⁶ at 25°C")
+                st.subheader("🧪 Species Concentration")
                 
-                species = calculate_species_exact(concentration / 1000, ph)  # Convert mM to M
+                species = calculate_species_exact(concentration / 1000, ph)
                 
                 sp_col1, sp_col2, sp_col3 = st.columns(3)
                 with sp_col1:
@@ -300,21 +266,32 @@ def main():
         else:
             st.info("Upload a photo and draw a box around the cuvette")
         
-        # Calculation example
+        # Reaction equations and formulas
         st.markdown("---")
-        st.subheader("📐 Calculation Examples (Equilibrium Model)")
+        st.subheader("⚗️ Reaction Equations")
         
-        st.markdown("**Example 1: C = 0.01 M, pH = 2 (Acidic)**")
-        ex1 = calculate_species_exact(0.01, 2)
-        st.write(f"- Cr₂O₇²⁻: {ex1['Cr2O7^2-']*1000:.2f} mM (39.4%)")
-        st.write(f"- HCrO₄⁻: {ex1['HCrO4-']*1000:.2f} mM (35.2%)")
-        st.write(f"- CrO₄²⁻: {ex1['CrO4^2-']*1000:.4f} mM (0.0%)")
+        st.markdown("**Step 1: First dissociation**")
+        st.latex(r"H_2CrO_4 \rightleftharpoons H^+ + HCrO_4^- \quad K_{a1} = 0.0294")
         
-        st.markdown("**Example 2: C = 0.06 M, pH = 10 (Basic)**")
-        ex2 = calculate_species_exact(0.06, 10)
-        st.write(f"- CrO₄²⁻: {ex2['CrO4^2-']*1000:.2f} mM (100.0%)")
-        st.write(f"- HCrO₄⁻: {ex2['HCrO4-']*1000:.4f} mM (0.0%)")
-        st.write(f"- Cr₂O₇²⁻: {ex2['Cr2O7^2-']*1000:.4f} mM (0.0%)")
+        st.markdown("**Step 2: Second dissociation**")
+        st.latex(r"HCrO_4^- \rightleftharpoons H^+ + CrO_4^{2-} \quad K_{a2} = 1.26 \times 10^{-6}")
+        
+        st.markdown("**Step 3: Dimerization**")
+        st.latex(r"2HCrO_4^- \rightleftharpoons Cr_2O_7^{2-} + H_2O \quad K_{dimer} = 10^{2.2}")
+        
+        st.markdown("---")
+        st.subheader("📐 Calculation Formulas")
+        
+        st.markdown("**Distribution coefficients:**")
+        st.latex(r"\alpha_{H_2CrO_4} = \frac{[H^+]^2}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
+        st.latex(r"\alpha_{HCrO_4^-} = \frac{K_{a1}[H^+]}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
+        st.latex(r"\alpha_{CrO_4^{2-}} = \frac{K_{a1}K_{a2}}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
+        
+        st.markdown("**Mass balance:**")
+        st.latex(r"C_{total} = [HCrO_4^-] + [CrO_4^{2-}] + 2[Cr_2O_7^{2-}]")
+        
+        st.markdown("**Dimerization equilibrium:**")
+        st.latex(r"[Cr_2O_7^{2-}] = K_{dimer} \times [HCrO_4^-]^2")
     
     st.markdown("---")
     st.caption("K2Cr2O7 Prediction System | ML-based with Equilibrium Calculation")
