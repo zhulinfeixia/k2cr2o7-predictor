@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "frontend/app.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "frontend/app.py"
+    }
+  ],
+  "env": {
+    "API_BASE_URL": "https://k2cr2o7-api.onrender.com"
+  }
+}
