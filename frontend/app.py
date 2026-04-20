@@ -12,7 +12,7 @@ import os
 
 # Page configuration
 st.set_page_config(
-    title="K2Cr2O7 Concentration Predictor",
+    page_title="K2Cr2O7 Concentration Predictor",
     page_icon="🧪",
     layout="wide"
 )
