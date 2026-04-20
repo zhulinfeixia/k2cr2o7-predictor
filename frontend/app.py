@@ -1,5 +1,5 @@
 """
-Streamlit Frontend - Simplified Version for Cloud Deployment
+Streamlit Frontend - Debug Version
 """
 
 import json
@@ -8,6 +8,7 @@ from datetime import datetime
 import requests
 import streamlit as st
 from PIL import Image
+import os
 
 # Page configuration
 st.set_page_config(
@@ -17,7 +18,6 @@ st.set_page_config(
 )
 
 # API configuration
-import os
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 # Initialize session state
@@ -26,11 +26,14 @@ if 'history' not in st.session_state:
 
 
 def check_api():
-    """Check API status"""
+    """Check API status with debug info"""
     try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=5)
+        st.sidebar.write(f"Debug: Trying {API_BASE_URL}/health")
+        response = requests.get(f"{API_BASE_URL}/health", timeout=10)
+        st.sidebar.write(f"Debug: Status {response.status_code}")
         return response.status_code == 200
-    except:
+    except Exception as e:
+        st.sidebar.write(f"Debug: Error - {str(e)}")
         return False
 
 
@@ -54,6 +57,10 @@ def main():
     # Sidebar
     with st.sidebar:
         st.title("🧪 K2Cr2O7 Predictor")
+        
+        # Debug info
+        st.sidebar.markdown("### Debug Info")
+        st.sidebar.write(f"API_BASE_URL: {API_BASE_URL}")
         
         api_ok = check_api()
         if api_ok:
