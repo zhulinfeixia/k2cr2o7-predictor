@@ -1,0 +1,5 @@
+# System packages for Streamlit Cloud
+# These are installed before Python packages
+
+libgl1
+libglib2.0-0
