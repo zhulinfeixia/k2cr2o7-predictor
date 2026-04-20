@@ -1,5 +1,5 @@
 """
-Streamlit Frontend - Debug Version
+Streamlit Frontend - Fixed Timeout Version
 """
 
 import json
@@ -12,7 +12,7 @@ import os
 
 # Page configuration
 st.set_page_config(
-    page_title="K2Cr2O7 Concentration Predictor",
+    title="K2Cr2O7 Concentration Predictor",
     page_icon="🧪",
     layout="wide"
 )
@@ -26,19 +26,16 @@ if 'history' not in st.session_state:
 
 
 def check_api():
-    """Check API status with debug info"""
+    """Check API status with longer timeout for Render cold start"""
     try:
-        st.sidebar.write(f"Debug: Trying {API_BASE_URL}/health")
-        response = requests.get(f"{API_BASE_URL}/health", timeout=10)
-        st.sidebar.write(f"Debug: Status {response.status_code}")
+        response = requests.get(f"{API_BASE_URL}/health", timeout=60)
         return response.status_code == 200
-    except Exception as e:
-        st.sidebar.write(f"Debug: Error - {str(e)}")
+    except:
         return False
 
 
 def predict(image_bytes, ph):
-    """Call API"""
+    """Call API with longer timeout"""
     try:
         files = {"image": ("image.jpg", image_bytes, "image/jpeg")}
         data = {"ph": ph}
@@ -46,7 +43,7 @@ def predict(image_bytes, ph):
             f"{API_BASE_URL}/predict",
             files=files,
             data=data,
-            timeout=30
+            timeout=60
         )
         return response.json() if response.status_code == 200 else {"error": "API error"}
     except Exception as e:
@@ -58,15 +55,17 @@ def main():
     with st.sidebar:
         st.title("🧪 K2Cr2O7 Predictor")
         
-        # Debug info
-        st.sidebar.markdown("### Debug Info")
-        st.sidebar.write(f"API_BASE_URL: {API_BASE_URL}")
+        st.markdown("### API Status")
         
-        api_ok = check_api()
+        # Check API with loading indicator
+        with st.spinner("Connecting to API..."):
+            api_ok = check_api()
+        
         if api_ok:
             st.success("✅ API Online")
         else:
             st.error("❌ API Offline")
+            st.info("The backend may be waking up from sleep. Please wait 30-60 seconds and refresh the page.")
         
         st.markdown("---")
         st.markdown("### Instructions")
@@ -95,13 +94,21 @@ def main():
         
         ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
         
-        if st.button("🔮 Predict", disabled=not (uploaded and api_ok)):
-            with st.spinner("Analyzing..."):
+        # Always allow button, but show warning if API is offline
+        predict_clicked = st.button("🔮 Predict", disabled=not uploaded)
+        
+        if predict_clicked and uploaded:
+            if not api_ok:
+                st.warning("API is offline. Attempting to wake up the backend (this may take 30-60 seconds)...")
+            
+            with st.spinner("Analyzing... (may take up to 60s on first request)"):
                 image_bytes = uploaded.read()
                 result = predict(image_bytes, ph)
             
             if "error" in result:
                 st.error(f"Error: {result['error']}")
+                if "timeout" in result['error'].lower():
+                    st.info("The backend is waking up from sleep. Please wait a moment and try again.")
             else:
                 st.session_state.history.append({
                     'time': datetime.now().strftime("%H:%M:%S"),
