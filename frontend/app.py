@@ -211,7 +211,11 @@ def main():
             with st.spinner("Analyzing... (may take up to 60s on first request)"):
                 # Use cropped image
                 img_byte_arr = io.BytesIO()
-                st.session_state.cropped_image.save(img_byte_arr, format='JPEG')
+                # Convert RGBA to RGB if necessary
+                cropped = st.session_state.cropped_image
+                if cropped.mode == 'RGBA':
+                    cropped = cropped.convert('RGB')
+                cropped.save(img_byte_arr, format='JPEG')
                 img_byte_arr.seek(0)
                 
                 result = predict(img_byte_arr.getvalue(), ph)
@@ -268,30 +272,27 @@ def main():
         
         # Reaction equations and formulas
         st.markdown("---")
-        st.subheader("⚗️ Reaction Equations")
+        st.subheader("⚗️ Reaction Equations (Hydrolysis)")
         
-        st.markdown("**Step 1: First dissociation**")
-        st.latex(r"H_2CrO_4 \rightleftharpoons H^+ + HCrO_4^- \quad K_{a1} = 0.0294")
+        st.markdown("**Step 1: Cr₂O₇²⁻ hydrolysis**")
+        st.latex(r"Cr_2O_7^{2-} + H_2O \rightleftharpoons 2HCrO_4^- \quad K_1 = 10^{-2.2}")
         
-        st.markdown("**Step 2: Second dissociation**")
-        st.latex(r"HCrO_4^- \rightleftharpoons H^+ + CrO_4^{2-} \quad K_{a2} = 1.26 \times 10^{-6}")
-        
-        st.markdown("**Step 3: Dimerization**")
-        st.latex(r"2HCrO_4^- \rightleftharpoons Cr_2O_7^{2-} + H_2O \quad K_{dimer} = 10^{2.2}")
+        st.markdown("**Step 2: HCrO₄⁻ hydrolysis**")
+        st.latex(r"HCrO_4^- \rightleftharpoons H^+ + CrO_4^{2-} \quad K_2 = 1.26 \times 10^{-6}")
         
         st.markdown("---")
         st.subheader("📐 Calculation Formulas")
         
-        st.markdown("**Distribution coefficients:**")
-        st.latex(r"\alpha_{H_2CrO_4} = \frac{[H^+]^2}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
-        st.latex(r"\alpha_{HCrO_4^-} = \frac{K_{a1}[H^+]}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
-        st.latex(r"\alpha_{CrO_4^{2-}} = \frac{K_{a1}K_{a2}}{[H^+]^2 + K_{a1}[H^+] + K_{a1}K_{a2}}")
+        st.markdown("**Equilibrium constants (25°C):**")
+        st.latex(r"K_1 = \frac{[HCrO_4^-]^2}{[Cr_2O_7^{2-}]} = 10^{-2.2}")
+        st.latex(r"K_2 = \frac{[H^+][CrO_4^{2-}]}{[HCrO_4^-]} = 1.26 \times 10^{-6}")
         
         st.markdown("**Mass balance:**")
-        st.latex(r"C_{total} = [HCrO_4^-] + [CrO_4^{2-}] + 2[Cr_2O_7^{2-}]")
+        st.latex(r"C_{total} = 2[Cr_2O_7^{2-}] + [HCrO_4^-] + [CrO_4^{2-}]")
         
-        st.markdown("**Dimerization equilibrium:**")
-        st.latex(r"[Cr_2O_7^{2-}] = K_{dimer} \times [HCrO_4^-]^2")
+        st.markdown("**Species distribution:**")
+        st.latex(r"[Cr_2O_7^{2-}] = \frac{[HCrO_4^-]^2}{K_1}")
+        st.latex(r"[CrO_4^{2-}] = \frac{K_2[HCrO_4^-]}{[H^+]}")
     
     st.markdown("---")
     st.caption("K2Cr2O7 Prediction System | ML-based with Equilibrium Calculation")
