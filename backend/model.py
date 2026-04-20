@@ -79,8 +79,14 @@ class ConcentrationPredictor:
                 f"预期 {len(self.FEATURE_ORDER)}"
             )
         
+        # DEBUG: 打印特征值
+        logger.info(f"DEBUG - Feature vector: {feature_vector[0]}")
+        logger.info(f"DEBUG - Feature names: {self.FEATURE_ORDER}")
+        logger.info(f"DEBUG - Feature ranges: min={feature_vector[0].min():.2f}, max={feature_vector[0].max():.2f}")
+        
         # 执行预测
         prediction = self.model.predict(feature_vector)[0]
+        logger.info(f"DEBUG - Raw prediction: {prediction}")
         
         # 计算置信度（使用树的方差作为不确定性估计）
         if hasattr(self.model, 'estimators_'):

@@ -275,8 +275,14 @@ class ImagePreprocessor:
         features_with_ph = features.copy()
         features_with_ph['pH'] = ph
         
+        # DEBUG: 打印特征值
+        logger.info(f"DEBUG - Extracted features: {features}")
+        logger.info(f"DEBUG - pH value: {ph}")
+        
         # 按顺序构建向量
         vector = np.array([features_with_ph[f] for f in feature_order])
+        
+        logger.info(f"DEBUG - Feature vector: {vector}")
         
         return vector.reshape(1, -1)
 
