@@ -149,6 +149,14 @@ async def predict(
         if len(image_bytes) == 0:
             raise HTTPException(status_code=400, detail="图像文件为空")
         
+        # DEBUG: 检查接收的图片尺寸
+        import cv2
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is not None:
+            logger.info(f"DEBUG - 接收图片尺寸: {img.shape}")
+        logger.info(f"DEBUG - 接收图片字节数: {len(image_bytes)} bytes")
+        
         # 2. 图像预处理
         try:
             preprocess_result = preprocess_image(image_bytes, ph, skip_preprocessing)

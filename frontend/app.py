@@ -36,10 +36,18 @@ def check_api():
         return False
 
 
-def predict(image_bytes, ph, skip_preprocessing=False):
+def predict(image_bytes, ph, skip_preprocessing=False, filename="image.png"):
     """Call API"""
     try:
-        files = {"image": ("image.png", image_bytes, "image/png")}
+        # 根据文件名确定MIME类型
+        if filename.lower().endswith(('.tif', '.tiff')):
+            mimetype = "image/tiff"
+        elif filename.lower().endswith('.png'):
+            mimetype = "image/png"
+        else:
+            mimetype = "image/jpeg"
+        
+        files = {"image": (filename, image_bytes, mimetype)}
         data = {"ph": ph, "skip_preprocessing": skip_preprocessing}
         response = requests.post(
             f"{API_BASE_URL}/predict",
@@ -197,12 +205,8 @@ def main():
         
         ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
         
-        # 添加预处理选项（默认跳过，因为用户已经手动裁剪）
-        skip_preprocessing = st.checkbox(
-            "跳过自动预处理（推荐：使用手动裁剪区域直接提取特征）",
-            value=True,
-            help="勾选后跳过自动ROI提取和光照标准化，直接使用上传的图片提取特征"
-        )
+        # 默认跳过自动预处理（用户已手动裁剪）
+        skip_preprocessing = True
         
         # Predict button
         predict_clicked = st.button("🔮 Predict", disabled=not (uploaded and api_ok))
@@ -211,22 +215,35 @@ def main():
             with st.spinner("Analyzing... (may take up to 60s on first request)"):
                 # Use cropped image
                 img_byte_arr = io.BytesIO()
-                # Convert RGBA to RGB if necessary
                 cropped = st.session_state.cropped_image
-                if cropped.mode == 'RGBA':
-                    cropped = cropped.convert('RGB')
                 
-                # DEBUG: 保存高质量图片，避免JPEG压缩失真
-                # 使用PNG格式避免压缩，或者使用高质量JPEG
-                cropped.save(img_byte_arr, format='PNG')
+                # 获取原始文件格式
+                original_name = uploaded.name.lower()
+                
+                # 根据原始格式保存，避免格式转换导致颜色失真
+                if original_name.endswith('.tif') or original_name.endswith('.tiff'):
+                    # TIF格式：保持原样或转换为PNG（TIF可能包含特殊信息）
+                    if cropped.mode == 'RGBA':
+                        cropped = cropped.convert('RGB')
+                    cropped.save(img_byte_arr, format='TIFF')
+                    img_format = 'TIFF'
+                else:
+                    # 其他格式：转换为PNG
+                    if cropped.mode == 'RGBA':
+                        cropped = cropped.convert('RGB')
+                    cropped.save(img_byte_arr, format='PNG')
+                    img_format = 'PNG'
+                
                 img_byte_arr.seek(0)
                 
                 # DEBUG: 打印图片信息
-                print(f"DEBUG - 发送图片大小: {len(img_byte_arr.getvalue())} bytes")
+                print(f"DEBUG - 原始格式: {original_name}")
+                print(f"DEBUG - 发送格式: {img_format}")
                 print(f"DEBUG - 图片模式: {cropped.mode}")
                 print(f"DEBUG - 图片尺寸: {cropped.size}")
+                print(f"DEBUG - 发送图片大小: {len(img_byte_arr.getvalue())} bytes")
                 
-                result = predict(img_byte_arr.getvalue(), ph, skip_preprocessing)
+                result = predict(img_byte_arr.getvalue(), ph, skip_preprocessing, uploaded.name)
             
             if "error" in result:
                 st.error(f"Error: {result['error']}")
@@ -253,19 +270,10 @@ def main():
                     rel = "High" if result['confidence'] > 0.8 else "Medium" if result['confidence'] > 0.5 else "Low"
                     st.metric("Reliability", rel)
                 
-                # 显示使用的模型信息
-                method = result.get('method', '')
-                if method.startswith('ph_'):
-                    ph_model = result.get('ph_model_used')
-                    st.info(f"🎯 Using pH={ph_model} specific model (pH input: {ph:.1f})")
-                else:
-                    st.info(f"📊 Using main model (pH input: {ph:.1f})")
-                
-                # 显示预处理方式
-                if skip_preprocessing:
-                    st.caption("✓ 使用手动裁剪区域直接提取特征（跳过自动预处理）")
-                else:
-                    st.caption("⚙️ 使用自动ROI提取和光照标准化")
+                # 显示使用的pH子模型
+                ph_model_used = result.get('ph_model_used')
+                if ph_model_used:
+                    st.caption(f"使用 pH={ph_model_used} 专属模型")
                 
                 # Species calculation
                 st.markdown("---")

@@ -5,6 +5,7 @@
 
 import cv2
 import numpy as np
+import io
 from typing import Tuple, Optional, Dict, List
 import logging
 
@@ -299,9 +300,26 @@ def preprocess_image(image_bytes: bytes, ph: float, skip_preprocessing: bool = F
     Returns:
         Dict 包含特征向量和元数据
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # 解码图像
     nparr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    # 如果OpenCV解码失败（如某些TIF格式），尝试用PIL
+    if image is None:
+        try:
+            from PIL import Image
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            # 转换为RGB（如果是RGBA或P模式）
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+            # 转换为OpenCV格式（BGR）
+            image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+            logger.info(f"使用PIL解码图像成功，尺寸: {image.shape}")
+        except Exception as e:
+            raise ValueError(f"无法解码图像，请确保上传的是有效的图像文件: {e}")
     
     if image is None:
         raise ValueError("无法解码图像，请确保上传的是有效的图像文件")
