@@ -36,11 +36,11 @@ def check_api():
         return False
 
 
-def predict(image_bytes, ph):
+def predict(image_bytes, ph, skip_preprocessing=False):
     """Call API"""
     try:
-        files = {"image": ("image.jpg", image_bytes, "image/jpeg")}
-        data = {"ph": ph}
+        files = {"image": ("image.png", image_bytes, "image/png")}
+        data = {"ph": ph, "skip_preprocessing": skip_preprocessing}
         response = requests.post(
             f"{API_BASE_URL}/predict",
             files=files,
@@ -197,6 +197,13 @@ def main():
         
         ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
         
+        # 添加预处理选项（默认跳过，因为用户已经手动裁剪）
+        skip_preprocessing = st.checkbox(
+            "跳过自动预处理（推荐：使用手动裁剪区域直接提取特征）",
+            value=True,
+            help="勾选后跳过自动ROI提取和光照标准化，直接使用上传的图片提取特征"
+        )
+        
         # Predict button
         predict_clicked = st.button("🔮 Predict", disabled=not (uploaded and api_ok))
         
@@ -208,10 +215,18 @@ def main():
                 cropped = st.session_state.cropped_image
                 if cropped.mode == 'RGBA':
                     cropped = cropped.convert('RGB')
-                cropped.save(img_byte_arr, format='JPEG')
+                
+                # DEBUG: 保存高质量图片，避免JPEG压缩失真
+                # 使用PNG格式避免压缩，或者使用高质量JPEG
+                cropped.save(img_byte_arr, format='PNG')
                 img_byte_arr.seek(0)
                 
-                result = predict(img_byte_arr.getvalue(), ph)
+                # DEBUG: 打印图片信息
+                print(f"DEBUG - 发送图片大小: {len(img_byte_arr.getvalue())} bytes")
+                print(f"DEBUG - 图片模式: {cropped.mode}")
+                print(f"DEBUG - 图片尺寸: {cropped.size}")
+                
+                result = predict(img_byte_arr.getvalue(), ph, skip_preprocessing)
             
             if "error" in result:
                 st.error(f"Error: {result['error']}")
@@ -245,6 +260,12 @@ def main():
                     st.info(f"🎯 Using pH={ph_model} specific model (pH input: {ph:.1f})")
                 else:
                     st.info(f"📊 Using main model (pH input: {ph:.1f})")
+                
+                # 显示预处理方式
+                if skip_preprocessing:
+                    st.caption("✓ 使用手动裁剪区域直接提取特征（跳过自动预处理）")
+                else:
+                    st.caption("⚙️ 使用自动ROI提取和光照标准化")
                 
                 # Species calculation
                 st.markdown("---")

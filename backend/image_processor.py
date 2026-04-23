@@ -287,13 +287,14 @@ class ImagePreprocessor:
         return vector.reshape(1, -1)
 
 
-def preprocess_image(image_bytes: bytes, ph: float) -> Dict:
+def preprocess_image(image_bytes: bytes, ph: float, skip_preprocessing: bool = False) -> Dict:
     """
     便捷的预处理函数
     
     Args:
         image_bytes: 图像字节数据
         ph: pH 值
+        skip_preprocessing: 是否跳过ROI提取和光照标准化（如果图片已经处理好）
         
     Returns:
         Dict 包含特征向量和元数据
@@ -305,7 +306,18 @@ def preprocess_image(image_bytes: bytes, ph: float) -> Dict:
     if image is None:
         raise ValueError("无法解码图像，请确保上传的是有效的图像文件")
     
-    # 预处理
+    if skip_preprocessing:
+        # 跳过ROI提取和光照标准化，直接提取特征
+        features = ImagePreprocessor()._extract_color_features(image)
+        feature_vector = ImagePreprocessor().get_feature_vector(features, ph)
+        return {
+            'feature_vector': feature_vector,
+            'features_dict': features,
+            'roi_image': image,
+            'metadata': {'extraction_method': 'skip_preprocessing'}
+        }
+    
+    # 完整预处理（ROI提取 + 光照标准化）
     preprocessor = ImagePreprocessor()
     result = preprocessor.preprocess(image)
     

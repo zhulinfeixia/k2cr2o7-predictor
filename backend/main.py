@@ -131,7 +131,8 @@ async def model_info():
 @app.post("/predict", response_model=PredictResponse, tags=["预测"])
 async def predict(
     ph: float = Form(..., ge=0, le=14, description="pH 值 (0-14)"),
-    image: UploadFile = File(..., description="比色皿图像文件")
+    image: UploadFile = File(..., description="比色皿图像文件"),
+    skip_preprocessing: bool = Form(False, description="是否跳过ROI提取和光照标准化（如果图片已处理好）")
 ):
     """
     预测重铬酸钾浓度
@@ -150,7 +151,14 @@ async def predict(
         
         # 2. 图像预处理
         try:
-            preprocess_result = preprocess_image(image_bytes, ph)
+            preprocess_result = preprocess_image(image_bytes, ph, skip_preprocessing)
+            
+            # DEBUG: 打印提取的特征值
+            logger.info(f"DEBUG - 预处理方式: {'跳过' if skip_preprocessing else '完整'}")
+            logger.info(f"DEBUG - 提取的特征: {preprocess_result['features_dict']}")
+            logger.info(f"DEBUG - pH值: {ph}")
+            logger.info(f"DEBUG - 特征向量: {preprocess_result['feature_vector'][0]}")
+            
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"图像处理失败: {str(e)}")
         
