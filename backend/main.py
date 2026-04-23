@@ -15,6 +15,21 @@ from pydantic import BaseModel, Field
 from image_processor import preprocess_image, ImagePreprocessor
 from model import get_predictor, ConcentrationPredictor
 
+# 启动时预加载模型，捕获错误
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+try:
+    logger.info("启动时预加载模型...")
+    _predictor = get_predictor()
+    logger.info("模型预加载成功!")
+except Exception as e:
+    logger.error(f"模型预加载失败: {e}")
+    import traceback
+    logger.error(f"错误详情: {traceback.format_exc()}")
+    _predictor = None
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="重铬酸钾浓度预测 API",
@@ -89,14 +104,15 @@ async def health_check():
     """健康检查接口"""
     try:
         predictor = get_predictor()
-        model_loaded = predictor.model is not None
+        model_loaded = predictor.main_model is not None
         return HealthResponse(
             status="healthy",
             model_loaded=model_loaded
         )
     except Exception as e:
+        logger.error(f"健康检查失败: {e}")
         return HealthResponse(
-            status="unhealthy",
+            status=f"unhealthy: {str(e)}",
             model_loaded=False
         )
 

@@ -41,7 +41,13 @@ class ConcentrationPredictor:
         """
         if model_path is None:
             current_dir = Path(__file__).parent
-            model_path = current_dir / "models" / "RF_model.joblib"
+            # 优先加载多pH模型，如果不存在则加载默认模型
+            multiph_path = current_dir / "models" / "RF_model_multiph.joblib"
+            default_path = current_dir / "models" / "RF_model.joblib"
+            if multiph_path.exists():
+                model_path = multiph_path
+            else:
+                model_path = default_path
         
         self.model_path = Path(model_path)
         self.main_model = None
@@ -55,20 +61,37 @@ class ConcentrationPredictor:
         try:
             logger.info(f"正在加载模型: {self.model_path}")
             
+            # 检查文件是否存在
+            if not self.model_path.exists():
+                raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
+            
+            # 检查文件大小
+            file_size = self.model_path.stat().st_size / (1024 * 1024)  # MB
+            logger.info(f"模型文件大小: {file_size:.2f} MB")
+            
             # 加载模型包
             model_package = joblib.load(self.model_path)
+            logger.info(f"模型文件加载完成，类型: {type(model_package)}")
             
             # 检查是否是多pH模型包
-            if isinstance(model_package, dict) and 'main_model' in model_package:
-                self.main_model = model_package['main_model']
-                self.ph_models = model_package.get('ph_models', {})
-                self.ph_stats = model_package.get('ph_stats', {})
-                self.version = model_package.get('version', '2.0')
-                logger.info(f"多pH集成模型加载成功 (版本: {self.version})")
-                logger.info(f"主模型: {type(self.main_model).__name__}")
-                logger.info(f"子模型数量: {len(self.ph_models)}")
-                if self.ph_models:
-                    logger.info(f"支持的pH值: {sorted(self.ph_models.keys())}")
+            if isinstance(model_package, dict):
+                logger.info(f"模型包包含的键: {list(model_package.keys())}")
+                
+                if 'main_model' in model_package:
+                    self.main_model = model_package['main_model']
+                    self.ph_models = model_package.get('ph_models', {})
+                    self.ph_stats = model_package.get('ph_stats', {})
+                    self.version = model_package.get('version', '2.0')
+                    logger.info(f"多pH集成模型加载成功 (版本: {self.version})")
+                    logger.info(f"主模型: {type(self.main_model).__name__}")
+                    logger.info(f"子模型数量: {len(self.ph_models)}")
+                    if self.ph_models:
+                        logger.info(f"支持的pH值: {sorted(self.ph_models.keys())}")
+                else:
+                    # 可能是其他格式的字典，尝试作为单一模型
+                    logger.warning(f"模型包不包含'main_model'键，尝试其他加载方式")
+                    self.main_model = model_package
+                    logger.info(f"模型加载成功: {type(self.main_model).__name__}")
             else:
                 # 旧版单一模型
                 self.main_model = model_package
@@ -77,11 +100,45 @@ class ConcentrationPredictor:
         except FileNotFoundError:
             raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
         except Exception as e:
+            logger.error(f"模型加载失败: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
             raise RuntimeError(f"模型加载失败: {e}")
+    
+    def _get_ph_model_key(self, ph: float) -> Optional[int]:
+        """
+        根据pH值确定使用哪个子模型
+        
+        pH范围映射:
+        - 2-3  → pH=2 模型
+        - 3-5  → pH=4 模型
+        - 5-7  → pH=6 模型
+        - 7-9  → pH=8 模型
+        - 9-11 → pH=10 模型
+        - 11-12→ pH=12 模型
+        """
+        if 2 <= ph < 3:
+            return 2
+        elif 3 <= ph < 5:
+            return 4
+        elif 5 <= ph < 7:
+            return 6
+        elif 7 <= ph < 9:
+            return 8
+        elif 9 <= ph < 11:
+            return 10
+        elif 11 <= ph <= 12:
+            return 12
+        else:
+            return None  # 超出范围
     
     def predict(self, feature_vector: np.ndarray, use_ph_model: bool = True) -> Dict[str, Any]:
         """
         执行预测
+        
+        策略:
+        1. 首先尝试使用对应pH范围的子模型
+        2. 如果没有匹配的子模型，使用主模型作为备选
         
         Args:
             feature_vector: 形状为 (1, 16) 的特征向量
@@ -103,38 +160,32 @@ class ConcentrationPredictor:
         # 获取pH值
         ph = float(feature_vector[0][0])
         
-        # 主模型预测
-        pred_main = self.main_model.predict(feature_vector)[0]
-        logger.info(f"主模型预测: {pred_main:.4f} M")
+        # 确定使用哪个模型
+        ph_model_key = self._get_ph_model_key(ph)
         
-        # 子模型预测（如果pH匹配且启用）
-        ph_int = int(round(ph))
-        pred_ph = None
-        
-        if use_ph_model and ph_int in self.ph_models:
-            # 提取不含pH的特征
+        if use_ph_model and ph_model_key is not None and ph_model_key in self.ph_models:
+            # 使用子模型预测
             feature_vector_no_ph = feature_vector[:, 1:]  # 去掉第一列pH
-            pred_ph = self.ph_models[ph_int].predict(feature_vector_no_ph)[0]
-            logger.info(f"pH={ph_int} 子模型预测: {pred_ph:.4f} M")
-            
-            # 集成预测：取平均
-            prediction = (pred_main + pred_ph) / 2
-            method = 'ensemble'
+            prediction = self.ph_models[ph_model_key].predict(feature_vector_no_ph)[0]
+            method = f'ph_{ph_model_key}_model'
+            logger.info(f"使用 pH={ph_model_key} 子模型预测: {prediction:.4f} M (输入pH={ph:.1f})")
         else:
-            prediction = pred_main
-            method = 'main_only'
+            # 使用主模型预测
+            prediction = self.main_model.predict(feature_vector)[0]
+            method = 'main_model'
+            ph_model_key = None
+            logger.info(f"使用主模型预测: {prediction:.4f} M (输入pH={ph:.1f})")
         
         # 计算置信度
-        confidence = self._calculate_confidence(prediction, ph)
+        confidence = self._calculate_confidence(prediction, ph, ph_model_key)
         
         # 生成警告
-        warnings = self._generate_warnings(feature_vector[0], prediction)
+        warnings = self._generate_warnings(feature_vector[0], prediction, ph_model_key)
         
         result = {
             'concentration': float(prediction),
-            'concentration_main': float(pred_main),
-            'concentration_ph': float(pred_ph) if pred_ph is not None else None,
-            'ph_used': ph_int if pred_ph is not None else None,
+            'ph_model_used': ph_model_key,
+            'ph_input': ph,
             'method': method,
             'confidence': float(confidence),
             'warnings': warnings,
@@ -145,30 +196,32 @@ class ConcentrationPredictor:
         
         return result
     
-    def _calculate_confidence(self, prediction: float, ph: float) -> float:
+    def _calculate_confidence(self, prediction: float, ph: float, ph_model_key: Optional[int]) -> float:
         """
         计算置信度
         
         基于：
-        1. 是否有对应pH的子模型
-        2. 预测值是否在合理范围内
+        1. 是否使用了对应pH范围的子模型
+        2. 预测值是否在训练范围内
         """
-        confidence = 0.7  # 基础置信度
+        confidence = 0.6  # 基础置信度
         
-        # 如果有子模型，增加置信度
-        ph_int = int(round(ph))
-        if ph_int in self.ph_models:
-            confidence += 0.2
-        
-        # 如果预测值在训练范围内，增加置信度
-        if self.ph_stats and ph_int in self.ph_stats:
-            stats = self.ph_stats[ph_int]
-            if stats['min_concentration'] <= prediction <= stats['max_concentration']:
-                confidence += 0.1
+        # 如果使用了子模型，增加置信度
+        if ph_model_key is not None:
+            confidence += 0.25
+            
+            # 如果预测值在该pH的训练范围内，再增加置信度
+            if self.ph_stats and ph_model_key in self.ph_stats:
+                stats = self.ph_stats[ph_model_key]
+                if stats['min_concentration'] <= prediction <= stats['max_concentration']:
+                    confidence += 0.15
+        else:
+            # 使用主模型，置信度较低
+            confidence += 0.1
         
         return float(np.clip(confidence, 0.1, 1.0))
     
-    def _generate_warnings(self, features: np.ndarray, prediction: float) -> List[str]:
+    def _generate_warnings(self, features: np.ndarray, prediction: float, ph_model_key: Optional[int]) -> List[str]:
         """生成使用警告"""
         warnings = []
         
@@ -176,28 +229,32 @@ class ConcentrationPredictor:
         r, g, b = features[1], features[2], features[3]
         
         # pH 范围检查
-        if ph < self.VALID_PH_RANGE[0] or ph > self.VALID_PH_RANGE[1]:
+        if ph < 2 or ph > 12:
             warnings.append(
-                f"pH 值 {ph:.1f} 超出训练范围 "
-                f"({self.VALID_PH_RANGE[0]}-{self.VALID_PH_RANGE[1]})，"
+                f"pH 值 {ph:.1f} 超出模型支持范围 (2-12)，"
                 f"预测结果可能不可靠"
             )
         
-        # 检查是否有对应pH的子模型
-        ph_int = int(round(ph))
-        if ph_int not in self.ph_models:
-            warnings.append(
-                f"pH={ph_int} 没有专属训练模型，使用主模型预测，"
-                f"结果可能不够精确"
-            )
+        # 检查是否使用了子模型
+        if ph_model_key is None:
+            if 2 <= ph <= 12:
+                warnings.append(
+                    f"pH={ph:.1f} 在支持范围内但未能匹配到子模型，"
+                    f"使用主模型预测，结果可能不够精确"
+                )
+            else:
+                warnings.append(
+                    f"pH={ph:.1f} 超出子模型支持范围，"
+                    f"使用主模型预测"
+                )
         
         # 浓度范围检查
         if prediction < 0:
             warnings.append(
-                f"预测浓度为负值 ({prediction:.3f} M)，"
+                f"预测浓度为负值 ({prediction:.4f} M)，"
                 f"可能是输入图像或 pH 值有误"
             )
-        elif prediction > self.VALID_CONCENTRATION_RANGE[1] / 1000:  # 转换为M
+        elif prediction > 0.02:  # 20 mM
             warnings.append(
                 f"预测浓度 {prediction:.4f} M 超出典型范围，"
                 f"请检查输入数据"

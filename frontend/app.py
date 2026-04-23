@@ -47,7 +47,15 @@ def predict(image_bytes, ph):
             data=data,
             timeout=60
         )
-        return response.json() if response.status_code == 200 else {"error": "API error"}
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # 返回详细错误信息
+            try:
+                error_detail = response.json().get('detail', response.text)
+            except:
+                error_detail = response.text or f"HTTP {response.status_code}"
+            return {"error": f"API Error ({response.status_code}): {error_detail}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -231,10 +239,12 @@ def main():
                     st.metric("Reliability", rel)
                 
                 # 显示使用的模型信息
-                if result.get('method') == 'ensemble':
-                    st.info(f"🎯 Using ensemble model (main + pH={int(result.get('ph_used', ph))} specific)")
-                elif result.get('method') == 'main_only':
-                    st.info(f"📊 Using main model (no specific model for pH={ph:.0f})")
+                method = result.get('method', '')
+                if method.startswith('ph_'):
+                    ph_model = result.get('ph_model_used')
+                    st.info(f"🎯 Using pH={ph_model} specific model (pH input: {ph:.1f})")
+                else:
+                    st.info(f"📊 Using main model (pH input: {ph:.1f})")
                 
                 # Species calculation
                 st.markdown("---")
