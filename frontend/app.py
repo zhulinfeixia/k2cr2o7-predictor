@@ -55,73 +55,58 @@ def predict(image_bytes, ph):
 def calculate_species_exact(C_total, pH, Ka1=0.0294, Ka2=1.26e-6):
     """
     精确计算铬物种浓度（基于化学平衡常数）
+    
+    反应体系：
+    1) H2CrO4 ⇌ H+ + HCrO4-     Ka1 = 2.94×10^-2
+    2) HCrO4- ⇌ H+ + CrO4^2-    Ka2 = 1.26×10^-6
+    3) 2HCrO4- ⇌ Cr2O7^2- + H2O  K_dimer = 10^2.2 = 1.58×10^1
+    
+    物料平衡：
+    C_total = [H2CrO4] + [HCrO4-] + [CrO4^2-] + 2[Cr2O7^2-]
     """
     import math
     
     H = 10**(-pH)
     
-    # 基于 H2CrO4 的解离，计算各单体物种的分布系数
-    denom = H**2 + Ka1*H + Ka1*Ka2
+    # 平衡常数（科学计数法表示）
+    Ka1 = 2.94e-2      # H2CrO4 ⇌ H+ + HCrO4-
+    Ka2 = 1.26e-6      # HCrO4- ⇌ H+ + CrO4^2-
+    K_dimer = 1.58e1   # 2HCrO4- ⇌ Cr2O7^2- + H2O (10^2.2)
     
-    alpha_H2CrO4 = H**2 / denom
-    alpha_HCrO4 = Ka1 * H / denom
-    alpha_CrO4 = Ka1 * Ka2 / denom
+    # 通过平衡常数建立方程组求解
+    # 设 [HCrO4-] = x，则：
+    # [Cr2O7^2-] = K_dimer * x^2 / [H2O] ≈ K_dimer * x^2 (水活度≈1)
+    # [CrO4^2-] = Ka2 * x / [H+]
+    # [H2CrO4] = x * [H+] / Ka1
     
-    # 二聚平衡常数
-    K_dimer = 10**2.2
+    # 物料平衡方程：
+    # C_total = [H2CrO4] + [HCrO4-] + [CrO4^2-] + 2[Cr2O7^2-]
+    # C_total = x*[H+]/Ka1 + x + Ka2*x/[H+] + 2*K_dimer*x^2
     
-    if pH <= 4:
-        C_monomer = C_total * (alpha_HCrO4 + alpha_CrO4)
-        a = 2 * K_dimer
-        b = 1
-        c = -C_monomer
-        
-        discriminant = b**2 - 4*a*c
-        if discriminant >= 0:
-            x = (-b + math.sqrt(discriminant)) / (2*a)
-            y = K_dimer * x**2
-        else:
-            x = C_monomer
-            y = 0
-        
-        HCrO4 = x
-        Cr2O7 = y
-        CrO4 = C_total * alpha_CrO4 * 0.1
-        
-    elif pH >= 8:
-        HCrO4 = C_total * alpha_HCrO4
-        CrO4 = C_total * alpha_CrO4
-        Cr2O7 = 0
-        
+    # 整理为关于 x 的二次方程：a*x^2 + b*x + c = 0
+    a = 2 * K_dimer
+    b = 1 + H/Ka1 + Ka2/H
+    c = -C_total
+    
+    # 求解二次方程
+    discriminant = b**2 - 4*a*c
+    if discriminant >= 0:
+        x = (-b + math.sqrt(discriminant)) / (2*a)  # [HCrO4-]
     else:
-        f_dimer = (8 - pH) / 4
-        C_monomer = C_total * (alpha_HCrO4 + alpha_CrO4)
-        
-        if f_dimer > 0:
-            a = 2 * K_dimer * f_dimer
-            b = 1
-            c = -C_monomer
-            
-            discriminant = b**2 - 4*a*c
-            if discriminant >= 0:
-                x = (-b + math.sqrt(discriminant)) / (2*a)
-                y = K_dimer * f_dimer * x**2
-            else:
-                x = C_monomer
-                y = 0
-            
-            HCrO4 = x
-            Cr2O7 = y
-            CrO4 = C_total * alpha_CrO4 * (1 - f_dimer*0.5)
-        else:
-            HCrO4 = C_total * alpha_HCrO4
-            CrO4 = C_total * alpha_CrO4
-            Cr2O7 = 0
+        # 退化为线性方程求解
+        x = C_total / b
+    
+    # 通过平衡常数计算各组分浓度（科学计数法形式）
+    HCrO4 = x                                          # [HCrO4-]
+    Cr2O7 = K_dimer * x**2                            # [Cr2O7^2-]
+    CrO4 = Ka2 * x / H                                # [CrO4^2-]
+    H2CrO4 = x * H / Ka1                              # [H2CrO4]
     
     return {
         'HCrO4-': HCrO4,
         'CrO4^2-': CrO4,
-        'Cr2O7^2-': Cr2O7
+        'Cr2O7^2-': Cr2O7,
+        'H2CrO4': H2CrO4
     }
 
 
