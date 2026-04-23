@@ -163,6 +163,9 @@ class ConcentrationPredictor:
         # 确定使用哪个模型
         ph_model_key = self._get_ph_model_key(ph)
         
+        # 暂时强制使用主模型，避免子模型过拟合问题
+        use_ph_model = False  # 强制使用主模型
+        
         if use_ph_model and ph_model_key is not None and ph_model_key in self.ph_models:
             # 使用子模型预测
             feature_vector_no_ph = feature_vector[:, 1:]  # 去掉第一列pH
@@ -235,8 +238,8 @@ class ConcentrationPredictor:
                 f"预测结果可能不可靠"
             )
         
-        # 检查是否使用了子模型
-        if ph_model_key is None:
+        # 检查是否使用了子模型（仅当存在子模型时显示此警告）
+        if ph_model_key is None and len(self.ph_models) > 0:
             if 2 <= ph <= 12:
                 warnings.append(
                     f"pH={ph:.1f} 在支持范围内但未能匹配到子模型，"
