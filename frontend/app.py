@@ -168,42 +168,23 @@ def main():
             type=["jpg", "jpeg", "png", "tif"]
         )
         
+        st.info("📋 请使用浓度在 1mM-8mM，pH 在 2-12 的溶液")
+        
         if uploaded:
-            # Load image
+            # 直接读取上传的图片（假设已裁剪好）
             image = Image.open(uploaded)
             
-            # Try to use streamlit-cropper
-            try:
-                from streamlit_cropper import st_cropper
-                
-                st.markdown("### ✂️ Draw a box around the cuvette")
-                
-                # Show cropper
-                cropped_image = st_cropper(
-                    image,
-                    aspect_ratio=None,  # Free aspect ratio
-                    box_color='#FF0000',
-                    return_type='image'
-                )
-                
-                # Save to session state
-                st.session_state.cropped_image = cropped_image
-                
-            except ImportError:
-                # Fallback to simple center crop
-                st.warning("streamlit-cropper not installed. Using center crop.")
-                
-                # Center crop 50%
-                width, height = image.size
-                left = width // 4
-                top = height // 4
-                right = 3 * width // 4
-                bottom = 3 * height // 4
-                
-                cropped_image = image.crop((left, top, right, bottom))
-                st.session_state.cropped_image = cropped_image
+            st.markdown("### 📷 Selected Image")
+            st.image(image, caption="Uploaded image (already cropped)", use_container_width=True)
+            
+            # 直接使用上传的图片
+            st.session_state.cropped_image = image
+            
+            # DEBUG: 打印图片信息
+            print(f"DEBUG - 上传图片尺寸: {image.size}")
+            print(f"DEBUG - 上传图片模式: {image.mode}")
         
-        ph = st.slider("pH", 0.0, 14.0, 7.0, 0.1)
+        ph = st.slider("pH", 2.0, 12.0, 7.0, 0.1)
         
         # 默认跳过自动预处理（用户已手动裁剪）
         skip_preprocessing = True
