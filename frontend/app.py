@@ -230,6 +230,12 @@ def main():
                     rel = "High" if result['confidence'] > 0.8 else "Medium" if result['confidence'] > 0.5 else "Low"
                     st.metric("Reliability", rel)
                 
+                # 显示使用的模型信息
+                if result.get('method') == 'ensemble':
+                    st.info(f"🎯 Using ensemble model (main + pH={int(result.get('ph_used', ph))} specific)")
+                elif result.get('method') == 'main_only':
+                    st.info(f"📊 Using main model (no specific model for pH={ph:.0f})")
+                
                 # Species calculation
                 st.markdown("---")
                 st.subheader("🧪 Species Concentration")

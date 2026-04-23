@@ -1,6 +1,7 @@
 """
-模型封装模块
+模型封装模块 - 多pH集成模型版本
 加载训练好的模型并进行推理
+支持主模型 + 各pH专属子模型
 """
 
 import joblib
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConcentrationPredictor:
-    """重铬酸钾浓度预测器"""
+    """重铬酸钾浓度预测器 - 多pH集成模型"""
     
     # 特征顺序（必须与训练时一致）
     FEATURE_ORDER = [
@@ -22,9 +23,14 @@ class ConcentrationPredictor:
         'R_over_G', 'R_over_B', 'G_over_B', 'R_ratio', 'G_ratio', 'B_ratio'
     ]
     
-    # 模型适用范围（根据训练数据分布）
+    FEATURE_ORDER_NO_PH = [
+        'R', 'G', 'B', 'H', 'S', 'V', 'L', 'a', 'b',
+        'R_over_G', 'R_over_B', 'G_over_B', 'R_ratio', 'G_ratio', 'B_ratio'
+    ]
+    
+    # 模型适用范围
     VALID_PH_RANGE = (2.0, 12.0)
-    VALID_CONCENTRATION_RANGE = (0.0, 10.0)  # mM，根据实际情况调整
+    VALID_CONCENTRATION_RANGE = (0.0, 10.0)  # mM
     
     def __init__(self, model_path: Optional[str] = None):
         """
@@ -34,42 +40,57 @@ class ConcentrationPredictor:
             model_path: 模型文件路径，默认使用 models/RF_model.joblib
         """
         if model_path is None:
-            # 默认路径：当前文件所在目录的 models 子目录
             current_dir = Path(__file__).parent
             model_path = current_dir / "models" / "RF_model.joblib"
         
         self.model_path = Path(model_path)
-        self.model = None
+        self.main_model = None
+        self.ph_models = {}
+        self.ph_stats = {}
+        self.version = "1.0"
         self._load_model()
     
     def _load_model(self):
         """加载模型文件"""
         try:
             logger.info(f"正在加载模型: {self.model_path}")
-            self.model = joblib.load(self.model_path)
-            logger.info(f"模型加载成功: {type(self.model).__name__}")
             
-            # 验证模型类型
-            model_type = type(self.model).__name__
-            if 'RandomForest' not in model_type:
-                logger.warning(f"模型类型为 {model_type}，预期为 RandomForestRegressor")
+            # 加载模型包
+            model_package = joblib.load(self.model_path)
+            
+            # 检查是否是多pH模型包
+            if isinstance(model_package, dict) and 'main_model' in model_package:
+                self.main_model = model_package['main_model']
+                self.ph_models = model_package.get('ph_models', {})
+                self.ph_stats = model_package.get('ph_stats', {})
+                self.version = model_package.get('version', '2.0')
+                logger.info(f"多pH集成模型加载成功 (版本: {self.version})")
+                logger.info(f"主模型: {type(self.main_model).__name__}")
+                logger.info(f"子模型数量: {len(self.ph_models)}")
+                if self.ph_models:
+                    logger.info(f"支持的pH值: {sorted(self.ph_models.keys())}")
+            else:
+                # 旧版单一模型
+                self.main_model = model_package
+                logger.info(f"单一模型加载成功: {type(self.main_model).__name__}")
                 
         except FileNotFoundError:
             raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
         except Exception as e:
             raise RuntimeError(f"模型加载失败: {e}")
     
-    def predict(self, feature_vector: np.ndarray) -> Dict[str, Any]:
+    def predict(self, feature_vector: np.ndarray, use_ph_model: bool = True) -> Dict[str, Any]:
         """
         执行预测
         
         Args:
             feature_vector: 形状为 (1, 16) 的特征向量
+            use_ph_model: 是否使用pH专属子模型（如果可用）
             
         Returns:
             Dict 包含预测结果和元数据
         """
-        if self.model is None:
+        if self.main_model is None:
             raise RuntimeError("模型未加载")
         
         # 验证输入维度
@@ -79,54 +100,78 @@ class ConcentrationPredictor:
                 f"预期 {len(self.FEATURE_ORDER)}"
             )
         
-        # DEBUG: 打印特征值
-        logger.info(f"DEBUG - Feature vector: {feature_vector[0]}")
-        logger.info(f"DEBUG - Feature names: {self.FEATURE_ORDER}")
-        logger.info(f"DEBUG - Feature ranges: min={feature_vector[0].min():.2f}, max={feature_vector[0].max():.2f}")
+        # 获取pH值
+        ph = float(feature_vector[0][0])
         
-        # 执行预测
-        prediction = self.model.predict(feature_vector)[0]
-        logger.info(f"DEBUG - Raw prediction: {prediction}")
+        # 主模型预测
+        pred_main = self.main_model.predict(feature_vector)[0]
+        logger.info(f"主模型预测: {pred_main:.4f} M")
         
-        # 计算置信度（使用树的方差作为不确定性估计）
-        if hasattr(self.model, 'estimators_'):
-            # 获取所有树的预测
-            tree_predictions = np.array([
-                tree.predict(feature_vector)[0] 
-                for tree in self.model.estimators_
-            ])
-            std = np.std(tree_predictions)
-            confidence = self._calculate_confidence(std)
+        # 子模型预测（如果pH匹配且启用）
+        ph_int = int(round(ph))
+        pred_ph = None
+        
+        if use_ph_model and ph_int in self.ph_models:
+            # 提取不含pH的特征
+            feature_vector_no_ph = feature_vector[:, 1:]  # 去掉第一列pH
+            pred_ph = self.ph_models[ph_int].predict(feature_vector_no_ph)[0]
+            logger.info(f"pH={ph_int} 子模型预测: {pred_ph:.4f} M")
+            
+            # 集成预测：取平均
+            prediction = (pred_main + pred_ph) / 2
+            method = 'ensemble'
         else:
-            confidence = 0.5  # 默认中等置信度
+            prediction = pred_main
+            method = 'main_only'
+        
+        # 计算置信度
+        confidence = self._calculate_confidence(prediction, ph)
         
         # 生成警告
         warnings = self._generate_warnings(feature_vector[0], prediction)
         
-        return {
+        result = {
             'concentration': float(prediction),
+            'concentration_main': float(pred_main),
+            'concentration_ph': float(pred_ph) if pred_ph is not None else None,
+            'ph_used': ph_int if pred_ph is not None else None,
+            'method': method,
             'confidence': float(confidence),
-            'std': float(std) if 'std' in locals() else None,
             'warnings': warnings,
             'is_valid': len(warnings) == 0
         }
-    
-    def _calculate_confidence(self, std: float) -> float:
-        """
-        根据预测标准差计算置信度
         
-        标准差越小，置信度越高
+        logger.info(f"最终预测结果: {prediction:.4f} M (方法: {method})")
+        
+        return result
+    
+    def _calculate_confidence(self, prediction: float, ph: float) -> float:
         """
-        # 将标准差映射到 0-1 的置信度
-        # 假设 std=0 时 confidence=1, std=1 时 confidence=0.5
-        confidence = np.exp(-std)
+        计算置信度
+        
+        基于：
+        1. 是否有对应pH的子模型
+        2. 预测值是否在合理范围内
+        """
+        confidence = 0.7  # 基础置信度
+        
+        # 如果有子模型，增加置信度
+        ph_int = int(round(ph))
+        if ph_int in self.ph_models:
+            confidence += 0.2
+        
+        # 如果预测值在训练范围内，增加置信度
+        if self.ph_stats and ph_int in self.ph_stats:
+            stats = self.ph_stats[ph_int]
+            if stats['min_concentration'] <= prediction <= stats['max_concentration']:
+                confidence += 0.1
+        
         return float(np.clip(confidence, 0.1, 1.0))
     
     def _generate_warnings(self, features: np.ndarray, prediction: float) -> List[str]:
         """生成使用警告"""
         warnings = []
         
-        # 解包特征
         ph = features[0]
         r, g, b = features[1], features[2], features[3]
         
@@ -138,15 +183,23 @@ class ConcentrationPredictor:
                 f"预测结果可能不可靠"
             )
         
+        # 检查是否有对应pH的子模型
+        ph_int = int(round(ph))
+        if ph_int not in self.ph_models:
+            warnings.append(
+                f"pH={ph_int} 没有专属训练模型，使用主模型预测，"
+                f"结果可能不够精确"
+            )
+        
         # 浓度范围检查
         if prediction < 0:
             warnings.append(
-                f"预测浓度为负值 ({prediction:.3f} mM)，"
+                f"预测浓度为负值 ({prediction:.3f} M)，"
                 f"可能是输入图像或 pH 值有误"
             )
-        elif prediction > self.VALID_CONCENTRATION_RANGE[1]:
+        elif prediction > self.VALID_CONCENTRATION_RANGE[1] / 1000:  # 转换为M
             warnings.append(
-                f"预测浓度 {prediction:.2f} mM 超出典型范围，"
+                f"预测浓度 {prediction:.4f} M 超出典型范围，"
                 f"请检查输入数据"
             )
         
@@ -157,7 +210,6 @@ class ConcentrationPredictor:
         if r > 250 and g > 250 and b > 250:
             warnings.append("图像颜色过亮，可能存在过曝")
         
-        # RGB 平衡检查（重铬酸钾溶液通常有颜色）
         rgb_variance = np.var([r, g, b])
         if rgb_variance < 100:
             warnings.append("图像颜色过于均匀，可能未检测到有效溶液")
@@ -167,26 +219,25 @@ class ConcentrationPredictor:
     def get_model_info(self) -> Dict[str, Any]:
         """获取模型信息"""
         info = {
-            'model_type': type(self.model).__name__ if self.model else None,
+            'model_type': type(self.main_model).__name__ if self.main_model else None,
+            'version': self.version,
             'feature_count': len(self.FEATURE_ORDER),
             'features': self.FEATURE_ORDER,
             'valid_ph_range': self.VALID_PH_RANGE,
             'valid_concentration_range': self.VALID_CONCENTRATION_RANGE,
+            'ph_models_available': sorted(self.ph_models.keys()) if self.ph_models else [],
+            'ph_stats': self.ph_stats
         }
         
-        # 添加模型特定参数
-        if self.model:
-            if hasattr(self.model, 'n_estimators'):
-                info['n_estimators'] = self.model.n_estimators
-            if hasattr(self.model, 'max_depth'):
-                info['max_depth'] = self.model.max_depth
-            if hasattr(self.model, 'feature_importances_'):
-                # 特征重要性
+        # 添加主模型特定参数
+        if self.main_model:
+            if hasattr(self.main_model, 'n_estimators'):
+                info['n_estimators'] = self.main_model.n_estimators
+            if hasattr(self.main_model, 'feature_importances_'):
                 importances = dict(zip(
                     self.FEATURE_ORDER, 
-                    self.model.feature_importances_.tolist()
+                    self.main_model.feature_importances_.tolist()
                 ))
-                # 按重要性排序
                 info['feature_importances'] = dict(
                     sorted(importances.items(), key=lambda x: x[1], reverse=True)
                 )
