@@ -1,5 +1,5 @@
 """
-Streamlit Frontend with Mouse Cropper
+Streamlit Frontend with ROI Cropper
 """
 
 import io
@@ -8,6 +8,7 @@ from PIL import Image
 
 import requests
 import streamlit as st
+from streamlit_cropper import st_cropper
 
 # Page configuration
 st.set_page_config(
@@ -25,6 +26,10 @@ if 'history' not in st.session_state:
     st.session_state.history = []
 if 'cropped_image' not in st.session_state:
     st.session_state.cropped_image = None
+if 'original_image' not in st.session_state:
+    st.session_state.original_image = None
+if 'roi_selected' not in st.session_state:
+    st.session_state.roi_selected = False
 
 
 def check_api():
@@ -168,17 +173,25 @@ def main():
             type=["jpg", "jpeg", "png", "tif"]
         )
         
-        st.info("📋 Please use the solutions with concentrations between 1 mM and 8 mM and pH values between 2 and 12.")
+        st.info("📋 请使用浓度在 1mM-8mM，pH 在 2-12 的溶液")
         
         if uploaded:
-            # 直接读取上传的图片（假设已裁剪好）
+            # 读取上传的图片
             image = Image.open(uploaded)
+            st.session_state.original_image = image
             
-            st.markdown("### 📷 Selected Image")
-            st.image(image, caption="Uploaded image (already cropped)", use_container_width=True)
+            st.markdown("### 📷 ROI Selection")
+            st.info("👆 Drag to select the cuvette region")
             
-            # 直接使用上传的图片
-            st.session_state.cropped_image = image
+            # ROI 截取组件 - 实时更新到 session state
+            st.session_state.cropped_image = st_cropper(
+                image,
+                realtime_update=True,
+                box_color="#FF0000",
+                aspect_ratio=None,
+                return_type="image"
+            )
+            st.session_state.roi_selected = True
             
             # DEBUG: 打印图片信息
             print(f"DEBUG - 上传图片尺寸: {image.size}")
@@ -276,8 +289,10 @@ def main():
     
     with col2:
         st.subheader("📊 Preview")
-        if uploaded and st.session_state.cropped_image:
-            st.image(st.session_state.cropped_image, caption="Selected Region", use_container_width=True)
+        if st.session_state.cropped_image:
+            st.image(st.session_state.cropped_image, caption="Selected ROI", use_container_width=True)
+        elif uploaded:
+            st.info("👈 Drag to select the cuvette region on the left")
         else:
             st.info("Upload a photo and draw a box around the cuvette")
         
