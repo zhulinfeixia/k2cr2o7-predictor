@@ -173,7 +173,7 @@ def main():
             type=["jpg", "jpeg", "png", "tif"]
         )
         
-        st.info("📋 请使用浓度在 1mM-8mM，pH 在 2-12 的溶液")
+        st.info("📋 Please use solutions with a concentration between 1 mM and 8 mM and a pH between 2 and 12.")
         
         if uploaded:
             # 读取上传的图片
