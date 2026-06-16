@@ -41,7 +41,7 @@ def check_api():
         return False
 
 
-def predict(image_bytes, ph, skip_preprocessing=False, filename="image.png"):
+def predict(image_bytes, ph, filename="image.png"):
     """Call API"""
     try:
         # 根据文件名确定MIME类型
@@ -53,7 +53,7 @@ def predict(image_bytes, ph, skip_preprocessing=False, filename="image.png"):
             mimetype = "image/jpeg"
         
         files = {"image": (filename, image_bytes, mimetype)}
-        data = {"ph": ph, "skip_preprocessing": skip_preprocessing}
+        data = {"ph": ph}
         response = requests.post(
             f"{API_BASE_URL}/predict",
             files=files,
@@ -173,7 +173,7 @@ def main():
             type=["jpg", "jpeg", "png", "tif"]
         )
         
-        st.info("📋 请使用浓度在 1mM-8mM，pH 在 2-12 的溶液")
+        st.info("📋 请使用浓度在 1mM-8mM，pH 在 3-8 的溶液")
         
         if uploaded:
             # 读取上传的图片
@@ -197,10 +197,7 @@ def main():
             print(f"DEBUG - 上传图片尺寸: {image.size}")
             print(f"DEBUG - 上传图片模式: {image.mode}")
         
-        ph = st.slider("pH", 2.0, 12.0, 7.0, 0.1)
-        
-        # 默认跳过自动预处理（用户已手动裁剪）
-        skip_preprocessing = True
+        ph = st.slider("pH", 3.0, 8.0, 6.0, 0.1)
         
         # Predict button
         predict_clicked = st.button("🔮 Predict", disabled=not (uploaded and api_ok))
@@ -237,7 +234,7 @@ def main():
                 print(f"DEBUG - 图片尺寸: {cropped.size}")
                 print(f"DEBUG - 发送图片大小: {len(img_byte_arr.getvalue())} bytes")
                 
-                result = predict(img_byte_arr.getvalue(), ph, skip_preprocessing, uploaded.name)
+                result = predict(img_byte_arr.getvalue(), ph, uploaded.name)
             
             if "error" in result:
                 st.error(f"Error: {result['error']}")

@@ -1,12 +1,12 @@
 """
 图像预处理模块
-实现 ROI 提取、光照标准化、颜色空间转换和特征构造
+实现光照标准化、颜色空间转换和特征构造
 """
 
 import cv2
 import numpy as np
 import io
-from typing import Tuple, Optional, Dict, List
+from typing import Dict
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -15,174 +15,38 @@ logger = logging.getLogger(__name__)
 
 class ImagePreprocessor:
     """图像预处理器 - 专门处理比色皿图像"""
-    
-    def __init__(self, target_size: Tuple[int, int] = (224, 224)):
-        self.target_size = target_size
         
     def preprocess(self, image: np.ndarray) -> Dict:
         """
-        完整的图像预处理流程
+        前端已裁剪 ROI 后的标准预处理流程
         
         Args:
             image: 输入图像 (BGR格式，OpenCV默认)
             
         Returns:
             Dict 包含：
-                - roi: 提取的ROI区域
+                - roi: 光照标准化后的输入区域
                 - features: 构造的特征字典
                 - metadata: 处理元数据
         """
-        # 1. 基础预处理
-        image = self._basic_preprocess(image)
-        
-        # 2. ROI 提取
-        roi = self._extract_roi(image)
-        if roi is None:
-            # 如果自动提取失败，使用中心区域
-            roi = self._fallback_roi(image)
-            logger.warning("自动ROI提取失败，使用中心区域作为备选")
-        
-        # 3. 光照标准化
-        roi_normalized = self._normalize_lighting(roi)
-        
-        # 4. 颜色空间转换和特征提取
-        features = self._extract_color_features(roi_normalized)
-        
-        return {
-            'roi': roi_normalized,
-            'features': features,
-            'metadata': {
-                'original_shape': image.shape,
-                'roi_shape': roi.shape if roi is not None else None,
-                'extraction_method': 'auto' if roi is not None else 'fallback'
-            }
-        }
-    
-    def _basic_preprocess(self, image: np.ndarray) -> np.ndarray:
-        """基础预处理：调整大小、去噪"""
-        # 确保图像不为空
         if image is None or image.size == 0:
             raise ValueError("输入图像为空")
         
-        # 如果图像太大，先缩小以提高处理速度
-        max_dim = 1024
-        h, w = image.shape[:2]
-        if max(h, w) > max_dim:
-            scale = max_dim / max(h, w)
-            new_w, new_h = int(w * scale), int(h * scale)
-            image = cv2.resize(image, (new_w, new_h))
+        # 前端已经完成 ROI 裁剪，后端统一进行光照标准化。
+        normalized = self._normalize_lighting(image)
         
-        # 轻微高斯模糊去噪
-        image = cv2.GaussianBlur(image, (5, 5), 0)
+        # 从标准化后的图像提取颜色特征。
+        features = self._extract_color_features(normalized)
         
-        return image
-    
-    def _extract_roi(self, image: np.ndarray) -> Optional[np.ndarray]:
-        """
-        自动提取比色皿 ROI 区域
-        
-        策略：
-        1. 转换为灰度
-        2. 边缘检测
-        3. 查找轮廓
-        4. 选择最可能是比色皿的矩形区域
-        """
-        try:
-            # 灰度转换
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # 自适应阈值
-            thresh = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 11, 2
-            )
-            
-            # 形态学操作清理
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-            thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-            
-            # 查找轮廓
-            contours, _ = cv2.findContours(
-                thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            
-            if not contours:
-                return None
-            
-            # 筛选可能的比色皿区域
-            candidates = []
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area < 1000:  # 过滤太小的区域
-                    continue
-                
-                x, y, w, h = cv2.boundingRect(cnt)
-                aspect_ratio = float(w) / h if h > 0 else 0
-                
-                # 比色皿通常是竖直的长方形
-                # 宽高比在 0.2-0.5 之间（窄高型）
-                if 0.15 < aspect_ratio < 0.6:
-                    candidates.append({
-                        'contour': cnt,
-                        'rect': (x, y, w, h),
-                        'area': area,
-                        'aspect_ratio': aspect_ratio,
-                        'center': (x + w//2, y + h//2)
-                    })
-            
-            if not candidates:
-                return None
-            
-            # 选择最中心的候选区域（假设比色皿在图像中心）
-            h, w = image.shape[:2]
-            image_center = (w // 2, h // 2)
-            
-            best_candidate = min(
-                candidates,
-                key=lambda c: abs(c['center'][0] - image_center[0]) + 
-                             abs(c['center'][1] - image_center[1])
-            )
-            
-            x, y, w, h = best_candidate['rect']
-            
-            # 添加边距
-            margin = int(min(w, h) * 0.1)
-            x1 = max(0, x + margin)
-            y1 = max(0, y + margin)
-            x2 = min(image.shape[1], x + w - margin)
-            y2 = min(image.shape[0], y + h - margin)
-            
-            roi = image[y1:y2, x1:x2]
-            
-            # 调整大小
-            if roi.size > 0:
-                roi = cv2.resize(roi, self.target_size)
-                return roi
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"ROI提取失败: {e}")
-            return None
-    
-    def _fallback_roi(self, image: np.ndarray) -> np.ndarray:
-        """备选方案：提取图像中心区域"""
-        h, w = image.shape[:2]
-        
-        # 提取中心 40% 区域
-        cx, cy = w // 2, h // 2
-        rw, rh = int(w * 0.4), int(h * 0.6)
-        
-        x1 = max(0, cx - rw // 2)
-        y1 = max(0, cy - rh // 2)
-        x2 = min(w, cx + rw // 2)
-        y2 = min(h, cy + rh // 2)
-        
-        roi = image[y1:y2, x1:x2]
-        roi = cv2.resize(roi, self.target_size)
-        
-        return roi
+        return {
+            'roi': normalized,
+            'features': features,
+            'metadata': {
+                'original_shape': image.shape,
+                'roi_shape': normalized.shape,
+                'extraction_method': 'frontend_roi_lighting_normalized'
+            }
+        }
     
     def _normalize_lighting(self, image: np.ndarray) -> np.ndarray:
         """
@@ -288,14 +152,13 @@ class ImagePreprocessor:
         return vector.reshape(1, -1)
 
 
-def preprocess_image(image_bytes: bytes, ph: float, skip_preprocessing: bool = False) -> Dict:
+def preprocess_image(image_bytes: bytes, ph: float) -> Dict:
     """
     便捷的预处理函数
     
     Args:
         image_bytes: 图像字节数据
         ph: pH 值
-        skip_preprocessing: 是否跳过ROI提取和光照标准化（如果图片已经处理好）
         
     Returns:
         Dict 包含特征向量和元数据
@@ -323,19 +186,8 @@ def preprocess_image(image_bytes: bytes, ph: float, skip_preprocessing: bool = F
     
     if image is None:
         raise ValueError("无法解码图像，请确保上传的是有效的图像文件")
-    
-    if skip_preprocessing:
-        # 跳过ROI提取和光照标准化，直接提取特征
-        features = ImagePreprocessor()._extract_color_features(image)
-        feature_vector = ImagePreprocessor().get_feature_vector(features, ph)
-        return {
-            'feature_vector': feature_vector,
-            'features_dict': features,
-            'roi_image': image,
-            'metadata': {'extraction_method': 'skip_preprocessing'}
-        }
-    
-    # 完整预处理（ROI提取 + 光照标准化）
+
+    # 标准流程：前端传入裁剪后的 ROI，后端统一光照标准化后提取特征。
     preprocessor = ImagePreprocessor()
     result = preprocessor.preprocess(image)
     
