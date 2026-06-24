@@ -197,8 +197,8 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .ph-meter {{
           position: absolute;
-          left: 38px;
-          top: 8px;
+          left: 90px;
+          top: 160px;
           width: 92px;
           border: 3px solid var(--ink);
           border-radius: 14px;
@@ -254,15 +254,16 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .acid-basic {{
           position: absolute;
-          left: 6px;
-          font-size: 12px;
+          left: 54px;
+          font-size: 22px;
+          font-weight: 800;
           color: var(--ink);
           writing-mode: vertical-rl;
           text-orientation: mixed;
-          letter-spacing: .04em;
+          letter-spacing: .02em;
         }}
-        .acid-basic.acid {{ top: 42px; }}
-        .acid-basic.basic {{ bottom: 42px; }}
+        .acid-basic.acid {{ top: 212px; }}
+        .acid-basic.basic {{ top: 86px; }}
         .cable-svg {{
           position: absolute;
           inset: 0;
@@ -275,8 +276,15 @@ def render_ph_equilibrium_simulator() -> None:
         .cable-path {{
           fill: none;
           stroke: #495057;
-          stroke-width: 7;
+          stroke-width: 5;
           stroke-linecap: round;
+        }}
+        .zoom-bracket {{
+          fill: none;
+          stroke: #7a5c21;
+          stroke-width: 5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
         }}
         .center-scene {{
           min-height: 450px;
@@ -427,12 +435,12 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .probe {{
           position: absolute;
-          width: 28px;
-          height: 105px;
-          border: 4px solid #3f0f73;
-          border-radius: 18px 18px 10px 10px;
+          width: 18px;
+          height: 70px;
+          border: 3px solid #3f0f73;
+          border-radius: 14px 14px 8px 8px;
           background: linear-gradient(180deg, #8b5cf6 0%, #5b21b6 100%);
-          top: 104px;
+          top: calc(var(--probe-y, 104px));
           left: calc(50% + var(--probe-x, -78px));
           transform: rotate(var(--probe-rot, -7deg));
           z-index: 5;
@@ -446,17 +454,17 @@ def render_ph_equilibrium_simulator() -> None:
         .probe::after {{
           content: "";
           position: absolute;
-          bottom: -27px;
-          left: 18px;
-          width: 74px;
-          height: 58px;
+          bottom: -20px;
+          left: 12px;
+          width: 48px;
+          height: 38px;
           border-radius: 50%;
-          border: 7px solid #4c1d95;
+          border: 5px solid #4c1d95;
           background:
             linear-gradient(90deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
             linear-gradient(0deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
             #ffffff;
-          box-shadow: inset 0 0 0 6px #6d28d9;
+          box-shadow: inset 0 0 0 4px #6d28d9;
         }}
         .magnifier {{
           position: relative;
@@ -555,7 +563,8 @@ def render_ph_equilibrium_simulator() -> None:
       </div>
       <div class="sim-stage" style="--ph-pos: 46.15;">
         <svg class="cable-svg" viewBox="0 0 900 470" preserveAspectRatio="none" aria-hidden="true">
-          <path class="cable-path" id="cablePath" d="M 84 98 C 120 170, 230 285, 392 252" />
+          <path class="cable-path" id="cablePath" d="M 150 252 C 205 318, 288 306, 394 224" />
+          <path class="zoom-bracket" d="M 432 210 C 475 210, 475 260, 510 260 C 475 260, 475 310, 432 310" />
         </svg>
         <div class="ph-panel">
           <div class="ph-meter">
@@ -627,6 +636,7 @@ def render_ph_equilibrium_simulator() -> None:
         const acidBtn = root.querySelector('#acidBtn');
         const baseBtn = root.querySelector('#baseBtn');
         let probeX = -78;
+        let probeY = 104;
 
         function clamp(value, min, max) {{
           return Math.max(min, Math.min(max, value));
@@ -676,10 +686,14 @@ def render_ph_equilibrium_simulator() -> None:
           return {{ h, hcro4, cro4, cr2o7 }};
         }}
 
-        function fmt(value) {{
+        function fmtHydrogen(value) {{
           if (value >= 1) return value.toFixed(3);
           if (value >= 0.01) return value.toFixed(4);
           return value.toExponential(2);
+        }}
+
+        function fmtChromium(value) {{
+          return Math.max(0, value).toFixed(3);
         }}
 
         function update() {{
@@ -694,20 +708,23 @@ def render_ph_equilibrium_simulator() -> None:
           solution.style.background = `rgb(${{rgb[0]}}, ${{rgb[1]}}, ${{rgb[2]}})`;
 
           const s = solveSpecies(ph);
-          root.querySelector('#hConc').textContent = fmt(s.h);
-          root.querySelector('#hcro4Conc').textContent = fmt(s.hcro4);
-          root.querySelector('#cro4Conc').textContent = fmt(s.cro4);
-          root.querySelector('#cr2o7Conc').textContent = fmt(s.cr2o7);
+          root.querySelector('#hConc').textContent = fmtHydrogen(s.h);
+          root.querySelector('#hcro4Conc').textContent = fmtChromium(s.hcro4);
+          root.querySelector('#cro4Conc').textContent = fmtChromium(s.cro4);
+          root.querySelector('#cr2o7Conc').textContent = fmtChromium(s.cr2o7);
         }}
 
-        function updateProbePosition(nextProbeX) {{
+        function updateProbePosition(nextProbeX, nextProbeY = probeY) {{
           probeX = clamp(nextProbeX, -106, 72);
+          probeY = clamp(nextProbeY, 70, 210);
           root.style.setProperty('--probe-x', `${{probeX}}px`);
-          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 18, -8, 7)}}deg`);
-          const cableEndX = 392 + (probeX + 78);
+          root.style.setProperty('--probe-y', `${{probeY}}px`);
+          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 24, -7, 7)}}deg`);
+          const cableEndX = 394 + (probeX + 78);
+          const cableEndY = 224 + (probeY - 104);
           cablePath.setAttribute(
             'd',
-            `M 84 98 C 118 170, 224 292, ${{cableEndX}} 252`
+            `M 150 252 C 210 334, 300 306, ${{cableEndX}} ${{cableEndY}}`
           );
         }}
 
@@ -732,7 +749,8 @@ def render_ph_equilibrium_simulator() -> None:
           if (!dragging) return;
           const rect = beakerWrap.getBoundingClientRect();
           const raw = event.clientX - rect.left - rect.width / 2;
-          updateProbePosition(raw);
+          const rawY = event.clientY - rect.top;
+          updateProbePosition(raw, rawY);
         }});
         probe.addEventListener('pointerup', event => {{
           dragging = false;
@@ -742,7 +760,7 @@ def render_ph_equilibrium_simulator() -> None:
           dragging = false;
           probe.releasePointerCapture(event.pointerId);
         }});
-        updateProbePosition(probeX);
+        updateProbePosition(probeX, probeY);
         update();
       </script>
     </div>
