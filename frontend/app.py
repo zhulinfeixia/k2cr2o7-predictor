@@ -507,36 +507,49 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .probe {{
           position: absolute;
-          width: 18px;
-          height: 70px;
-          border: 3px solid #3f0f73;
-          border-radius: 14px 14px 8px 8px;
-          background: linear-gradient(180deg, #8b5cf6 0%, #5b21b6 100%);
-          top: calc(var(--probe-y, 104px));
-          left: calc(50% + var(--probe-x, -78px));
-          transform: rotate(var(--probe-rot, -7deg));
+          width: 20px;
+          height: 82px;
+          border: 3px solid #2f1850;
+          border-radius: 8px 8px 5px 5px;
+          background: linear-gradient(90deg, #5b2d91 0%, #9b72cf 47%, #60339a 100%);
+          top: 104px;
+          left: calc(50% - 82px);
+          transform: rotate(-4deg);
           z-index: 5;
-          cursor: grab;
-          touch-action: none;
           user-select: none;
         }}
-        .probe:active {{
-          cursor: grabbing;
+        .probe::before {{
+          content: "";
+          position: absolute;
+          width: 10px;
+          height: 9px;
+          left: 2px;
+          top: -12px;
+          border: 3px solid #2f1850;
+          border-bottom: 0;
+          border-radius: 5px 5px 0 0;
+          background: #394957;
         }}
         .probe::after {{
           content: "";
           position: absolute;
-          bottom: -20px;
-          left: 12px;
-          width: 48px;
-          height: 38px;
-          border-radius: 50%;
-          border: 5px solid #4c1d95;
-          background:
-            linear-gradient(90deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
-            linear-gradient(0deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
-            #ffffff;
-          box-shadow: inset 0 0 0 4px #6d28d9;
+          bottom: -18px;
+          left: 1px;
+          width: 12px;
+          height: 22px;
+          border: 3px solid #2f1850;
+          border-radius: 4px 4px 9px 9px;
+          background: linear-gradient(180deg, #e7d9f6 0%, #c9aae8 55%, #9163bd 100%);
+        }}
+        .probe-junction {{
+          position: absolute;
+          left: 2px;
+          right: 2px;
+          bottom: 9px;
+          height: 7px;
+          border-top: 2px solid #2f1850;
+          border-bottom: 2px solid #2f1850;
+          background: #d9caec;
         }}
         .magnifier {{
           position: relative;
@@ -669,7 +682,7 @@ def render_ph_equilibrium_simulator() -> None:
           </div>
           <div class="drop" id="drop"></div>
           <div class="beaker-wrap">
-            <div class="probe" id="probe" title="Drag the probe"></div>
+            <div class="probe" id="probe" title="pH electrode"><span class="probe-junction"></span></div>
             <div class="beaker">
               <div class="solution" id="solution"></div>
             </div>
@@ -706,12 +719,10 @@ def render_ph_equilibrium_simulator() -> None:
         const solution = root.querySelector('#solution');
         const drop = root.querySelector('#drop');
         const probe = root.querySelector('#probe');
-        const beakerWrap = root.querySelector('.beaker-wrap');
+        const phMeter = root.querySelector('.ph-meter');
         const cablePath = root.querySelector('#cablePath');
         const acidBtn = root.querySelector('#acidBtn');
         const baseBtn = root.querySelector('#baseBtn');
-        let probeX = -78;
-        let probeY = 104;
 
         function clamp(value, min, max) {{
           return Math.max(min, Math.min(max, value));
@@ -792,17 +803,19 @@ def render_ph_equilibrium_simulator() -> None:
           root.querySelector('#cr2o7Conc').textContent = fmtChromium(s.cr2o7);
         }}
 
-        function updateProbePosition(nextProbeX, nextProbeY = probeY) {{
-          probeX = clamp(nextProbeX, -106, 72);
-          probeY = clamp(nextProbeY, 70, 210);
-          root.style.setProperty('--probe-x', `${{probeX}}px`);
-          root.style.setProperty('--probe-y', `${{probeY}}px`);
-          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 24, -7, 7)}}deg`);
-          const cableEndX = 394 + (probeX + 78);
-          const cableEndY = 224 + (probeY - 104);
+        function updateCable() {{
+          const stageRect = stage.getBoundingClientRect();
+          const meterRect = phMeter.getBoundingClientRect();
+          const probeRect = probe.getBoundingClientRect();
+          const scaleX = 900 / stageRect.width;
+          const scaleY = 470 / stageRect.height;
+          const startX = (meterRect.left + meterRect.width / 2 - stageRect.left) * scaleX;
+          const startY = (meterRect.bottom - stageRect.top) * scaleY;
+          const endX = (probeRect.left + probeRect.width / 2 - stageRect.left) * scaleX;
+          const endY = (probeRect.top - stageRect.top) * scaleY;
           cablePath.setAttribute(
             'd',
-            `M 150 252 C 210 334, 300 306, ${{cableEndX}} ${{cableEndY}}`
+            `M ${{startX}} ${{startY}} C ${{startX}} ${{startY + 72}}, ${{endX - 72}} ${{endY - 38}}, ${{endX}} ${{endY}}`
           );
         }}
 
@@ -818,27 +831,8 @@ def render_ph_equilibrium_simulator() -> None:
         root.querySelector('#acidBtn').addEventListener('click', () => addDrop(-0.5, '#db4b3f'));
         root.querySelector('#baseBtn').addEventListener('click', () => addDrop(0.5, '#2f80ed'));
 
-        let dragging = false;
-        probe.addEventListener('pointerdown', event => {{
-          dragging = true;
-          probe.setPointerCapture(event.pointerId);
-        }});
-        probe.addEventListener('pointermove', event => {{
-          if (!dragging) return;
-          const rect = beakerWrap.getBoundingClientRect();
-          const raw = event.clientX - rect.left - rect.width / 2;
-          const rawY = event.clientY - rect.top;
-          updateProbePosition(raw, rawY);
-        }});
-        probe.addEventListener('pointerup', event => {{
-          dragging = false;
-          probe.releasePointerCapture(event.pointerId);
-        }});
-        probe.addEventListener('pointercancel', event => {{
-          dragging = false;
-          probe.releasePointerCapture(event.pointerId);
-        }});
-        updateProbePosition(probeX, probeY);
+        window.addEventListener('resize', updateCable);
+        requestAnimationFrame(updateCable);
         update();
       </script>
     </div>
