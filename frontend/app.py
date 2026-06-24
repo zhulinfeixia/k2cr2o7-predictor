@@ -197,26 +197,27 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .ph-meter {{
           position: absolute;
-          left: 42px;
+          left: 38px;
           top: 8px;
-          width: 86px;
+          width: 92px;
           border: 3px solid var(--ink);
-          border-radius: 10px;
+          border-radius: 14px;
           padding: 9px 8px 12px;
-          background: #fff;
-          box-shadow: 0 2px 0 var(--ink);
+          background: #566a86;
+          box-shadow: 0 3px 0 #263241;
           text-align: center;
           z-index: 3;
         }}
         .ph-meter-title {{
-          font-size: 13px;
+          color: #ffffff;
+          font-size: 18px;
           font-weight: 700;
-          margin-bottom: 4px;
+          margin-bottom: 7px;
         }}
         .ph-meter-value {{
-          border: 2px solid var(--ink);
-          border-radius: 5px;
-          background: #f2f4f7;
+          border: 2px solid #d0d5dd;
+          border-radius: 10px;
+          background: #ffffff;
           font-family: Consolas, monospace;
           font-size: 24px;
           font-weight: 700;
@@ -251,24 +252,6 @@ def render_ph_equilibrium_simulator() -> None:
           font-size: 24px;
           font-weight: 700;
         }}
-        .probe-line {{
-          position: absolute;
-          left: 72px;
-          width: 54px;
-          height: 3px;
-          background: var(--ink);
-          bottom: calc(var(--ph-pos) * 1%);
-        }}
-        .probe-tip {{
-          position: absolute;
-          left: 124px;
-          width: 0;
-          height: 0;
-          border-top: 10px solid transparent;
-          border-bottom: 10px solid transparent;
-          border-right: 18px solid var(--ink);
-          bottom: calc(var(--ph-pos) * 1% - 9px);
-        }}
         .acid-basic {{
           position: absolute;
           left: 6px;
@@ -291,10 +274,9 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .cable-path {{
           fill: none;
-          stroke: #101828;
-          stroke-width: 4;
+          stroke: #495057;
+          stroke-width: 7;
           stroke-linecap: round;
-          stroke-dasharray: 7 8;
         }}
         .center-scene {{
           min-height: 450px;
@@ -445,12 +427,12 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .probe {{
           position: absolute;
-          width: 10px;
-          height: 210px;
-          border: 3px solid var(--ink);
-          border-radius: 8px;
-          background: #f2f4f7;
-          top: 24px;
+          width: 28px;
+          height: 105px;
+          border: 4px solid #3f0f73;
+          border-radius: 18px 18px 10px 10px;
+          background: linear-gradient(180deg, #8b5cf6 0%, #5b21b6 100%);
+          top: 104px;
           left: calc(50% + var(--probe-x, -78px));
           transform: rotate(var(--probe-rot, -7deg));
           z-index: 5;
@@ -464,12 +446,17 @@ def render_ph_equilibrium_simulator() -> None:
         .probe::after {{
           content: "";
           position: absolute;
-          bottom: -16px;
-          left: -5px;
-          width: 18px;
-          height: 18px;
+          bottom: -27px;
+          left: 18px;
+          width: 74px;
+          height: 58px;
           border-radius: 50%;
-          background: #101828;
+          border: 7px solid #4c1d95;
+          background:
+            linear-gradient(90deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
+            linear-gradient(0deg, transparent 47%, #111827 48%, #111827 52%, transparent 53%),
+            #ffffff;
+          box-shadow: inset 0 0 0 6px #6d28d9;
         }}
         .magnifier {{
           position: relative;
@@ -568,7 +555,7 @@ def render_ph_equilibrium_simulator() -> None:
       </div>
       <div class="sim-stage" style="--ph-pos: 46.15;">
         <svg class="cable-svg" viewBox="0 0 900 470" preserveAspectRatio="none" aria-hidden="true">
-          <path class="cable-path" id="cablePath" d="M 120 110 C 210 140, 250 250, 370 205 S 470 160, 505 220" />
+          <path class="cable-path" id="cablePath" d="M 84 98 C 120 170, 230 285, 392 252" />
         </svg>
         <div class="ph-panel">
           <div class="ph-meter">
@@ -583,8 +570,6 @@ def render_ph_equilibrium_simulator() -> None:
             <div class="ph-tick seven">7</div>
             <div class="ph-tick one">1</div>
           </div>
-          <div class="probe-line"></div>
-          <div class="probe-tip"></div>
         </div>
 
         <div class="center-scene">
@@ -718,11 +703,11 @@ def render_ph_equilibrium_simulator() -> None:
         function updateProbePosition(nextProbeX) {{
           probeX = clamp(nextProbeX, -106, 72);
           root.style.setProperty('--probe-x', `${{probeX}}px`);
-          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 12, -12, 10)}}deg`);
-          const cableEndX = 505 + (probeX + 78);
+          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 18, -8, 7)}}deg`);
+          const cableEndX = 392 + (probeX + 78);
           cablePath.setAttribute(
             'd',
-            `M 120 110 C 210 140, 250 250, 370 205 S ${{cableEndX - 35}} 160, ${{cableEndX}} 220`
+            `M 84 98 C 118 170, 224 292, ${{cableEndX}} 252`
           );
         }}
 
