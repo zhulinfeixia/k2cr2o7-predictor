@@ -182,17 +182,45 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .sim-stage {{
           display: grid;
-          grid-template-columns: 150px minmax(280px, 1fr) minmax(260px, 330px);
+          grid-template-columns: 160px minmax(310px, 1fr) minmax(340px, 390px);
           gap: 22px;
           align-items: center;
-          min-height: 430px;
+          min-height: 470px;
+          position: relative;
         }}
         .ph-panel {{
-          height: 360px;
+          height: 390px;
           position: relative;
           display: flex;
           align-items: center;
           justify-content: center;
+        }}
+        .ph-meter {{
+          position: absolute;
+          left: 42px;
+          top: 8px;
+          width: 86px;
+          border: 3px solid var(--ink);
+          border-radius: 10px;
+          padding: 9px 8px 12px;
+          background: #fff;
+          box-shadow: 0 2px 0 var(--ink);
+          text-align: center;
+          z-index: 3;
+        }}
+        .ph-meter-title {{
+          font-size: 13px;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }}
+        .ph-meter-value {{
+          border: 2px solid var(--ink);
+          border-radius: 5px;
+          background: #f2f4f7;
+          font-family: Consolas, monospace;
+          font-size: 24px;
+          font-weight: 700;
+          line-height: 34px;
         }}
         .ph-scale {{
           width: 34px;
@@ -201,6 +229,7 @@ def render_ph_equilibrium_simulator() -> None:
           border-radius: 12px;
           background: linear-gradient(to top, #4caf50 0%, #c6d93b 42%, #f6c343 55%, #db4b3f 100%);
           position: relative;
+          top: 34px;
           box-shadow: inset 0 0 0 4px rgba(255,255,255,.45);
         }}
         .ph-tick {{
@@ -251,11 +280,28 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .acid-basic.acid {{ top: 42px; }}
         .acid-basic.basic {{ bottom: 42px; }}
+        .cable-svg {{
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          overflow: visible;
+          pointer-events: none;
+          z-index: 1;
+        }}
+        .cable-path {{
+          fill: none;
+          stroke: #101828;
+          stroke-width: 4;
+          stroke-linecap: round;
+          stroke-dasharray: 7 8;
+        }}
         .center-scene {{
-          min-height: 420px;
+          min-height: 450px;
           position: relative;
           display: grid;
-          grid-template-rows: 92px 1fr;
+          grid-template-rows: 108px 1fr;
+          z-index: 2;
         }}
         .drop-controls {{
           display: flex;
@@ -268,15 +314,63 @@ def render_ph_equilibrium_simulator() -> None:
           background: #fff;
           color: var(--ink);
           border-radius: 6px;
-          padding: 10px 26px;
-          font-size: 18px;
+          padding: 9px 16px 10px;
+          min-width: 126px;
+          font-size: 17px;
           font-weight: 700;
           cursor: pointer;
           box-shadow: 0 2px 0 var(--ink);
+          display: grid;
+          grid-template-columns: 26px 1fr;
+          gap: 8px;
+          align-items: center;
         }}
         .drop-button:active {{
           transform: translateY(2px);
           box-shadow: none;
+        }}
+        .drop-button:disabled {{
+          opacity: .45;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 0 2px 0 var(--ink);
+        }}
+        .pipette-icon {{
+          position: relative;
+          width: 25px;
+          height: 42px;
+          transform: rotate(-36deg);
+        }}
+        .pipette-icon::before {{
+          content: "";
+          position: absolute;
+          left: 9px;
+          top: 4px;
+          width: 8px;
+          height: 31px;
+          border: 2px solid var(--ink);
+          border-radius: 7px;
+          background: #f8fafc;
+        }}
+        .pipette-icon::after {{
+          content: "";
+          position: absolute;
+          left: 11px;
+          top: 33px;
+          width: 5px;
+          height: 10px;
+          background: var(--ink);
+          clip-path: polygon(35% 0, 65% 0, 100% 100%, 0 100%);
+        }}
+        .pipette-bulb {{
+          position: absolute;
+          left: 5px;
+          top: 0;
+          width: 16px;
+          height: 12px;
+          border: 2px solid var(--ink);
+          border-radius: 50% 50% 44% 44%;
+          background: #fff;
         }}
         .drop {{
           position: absolute;
@@ -302,7 +396,7 @@ def render_ph_equilibrium_simulator() -> None:
           display: flex;
           justify-content: center;
           align-items: center;
-          height: 320px;
+          height: 342px;
         }}
         .beaker {{
           width: 142px;
@@ -335,7 +429,7 @@ def render_ph_equilibrium_simulator() -> None:
           height: 175px;
           background: rgb(182,155,60);
           border-radius: 0 0 35px 35px;
-          opacity: .82;
+          opacity: .9;
           transition: background 280ms ease;
         }}
         .solution::before {{
@@ -349,13 +443,6 @@ def render_ph_equilibrium_simulator() -> None:
           background: inherit;
           filter: brightness(1.12);
         }}
-        .volume-label {{
-          position: absolute;
-          bottom: 22px;
-          font-size: 13px;
-          color: rgba(23,32,42,.72);
-          z-index: 4;
-        }}
         .probe {{
           position: absolute;
           width: 10px;
@@ -364,9 +451,15 @@ def render_ph_equilibrium_simulator() -> None:
           border-radius: 8px;
           background: #f2f4f7;
           top: 24px;
-          left: calc(50% - 6px);
-          transform: translateX(-78px) rotate(-7deg);
+          left: calc(50% + var(--probe-x, -78px));
+          transform: rotate(var(--probe-rot, -7deg));
           z-index: 5;
+          cursor: grab;
+          touch-action: none;
+          user-select: none;
+        }}
+        .probe:active {{
+          cursor: grabbing;
         }}
         .probe::after {{
           content: "";
@@ -380,11 +473,12 @@ def render_ph_equilibrium_simulator() -> None:
         }}
         .magnifier {{
           position: relative;
-          height: 420px;
+          height: 450px;
+          z-index: 2;
         }}
         .lens {{
-          width: 258px;
-          height: 258px;
+          width: 332px;
+          height: 332px;
           border: 8px solid var(--ink);
           border-radius: 50%;
           position: relative;
@@ -400,12 +494,12 @@ def render_ph_equilibrium_simulator() -> None:
           border: 7px solid var(--ink);
           border-radius: 18px;
           transform: rotate(34deg);
-          left: 46px;
-          top: 232px;
+          left: 54px;
+          top: 300px;
         }}
         .ion-orbit {{
           position: absolute;
-          inset: 54px;
+          inset: 72px;
           border: 3px solid var(--ink);
           border-radius: 50%;
         }}
@@ -421,58 +515,49 @@ def render_ph_equilibrium_simulator() -> None:
           font-size: 20px;
           font-weight: 700;
         }}
-        .ion.center {{ left: 111px; top: 111px; }}
-        .ion.top {{ left: 112px; top: 45px; }}
-        .ion.left {{ left: 62px; top: 155px; }}
-        .ion.right {{ right: 62px; top: 155px; }}
+        .ion.center {{ left: 149px; top: 147px; }}
+        .ion.top {{ left: 149px; top: 62px; }}
+        .ion.left {{ left: 72px; top: 192px; }}
+        .ion.right {{ right: 72px; top: 192px; }}
         .ion-caption {{
           position: absolute;
-          top: -20px;
-          left: 105px;
+          top: 10px;
+          left: 145px;
           font-weight: 700;
         }}
-        .conc-table {{
-          margin: 16px auto 0;
-          width: min(100%, 320px);
-          border-collapse: collapse;
-          font-size: 13px;
-        }}
-        .conc-table th, .conc-table td {{
-          border-bottom: 1px solid #eaecf0;
-          padding: 6px 4px;
-          text-align: right;
+        .ion-label {{
+          position: absolute;
+          min-width: 106px;
+          font-size: 12px;
+          line-height: 1.22;
+          color: #101828;
+          background: rgba(255,255,255,.84);
+          border: 1px solid #d0d5dd;
+          border-radius: 6px;
+          padding: 5px 7px;
           white-space: nowrap;
         }}
-        .conc-table th:first-child, .conc-table td:first-child {{
-          text-align: left;
-        }}
-        .sim-footer {{
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-          margin-top: 14px;
-        }}
-        .readout {{
-          border: 1px solid #eaecf0;
-          border-radius: 8px;
-          padding: 10px 12px;
-          background: #fcfcfd;
-        }}
-        .readout b {{
+        .ion-label b {{
           display: block;
-          font-size: 20px;
-          margin-top: 4px;
+          font-size: 13px;
+          margin-bottom: 2px;
         }}
-        .readout span {{
+        .ion-label.h {{ left: 183px; top: 133px; }}
+        .ion-label.hcro4 {{ left: 187px; top: 56px; }}
+        .ion-label.cro4 {{ left: 22px; top: 230px; }}
+        .ion-label.cr2o7 {{ right: 18px; top: 230px; }}
+        .range-note {{
+          position: absolute;
+          left: 50%;
+          bottom: 4px;
+          transform: translateX(-50%);
           color: var(--muted);
           font-size: 12px;
+          white-space: nowrap;
         }}
         @media (max-width: 820px) {{
           .sim-stage {{
             grid-template-columns: 1fr;
-          }}
-          .sim-footer {{
-            grid-template-columns: repeat(2, 1fr);
           }}
         }}
       </style>
@@ -482,7 +567,14 @@ def render_ph_equilibrium_simulator() -> None:
         <span>Initial solution: 5 mM K2Cr2O7, about 50 mL</span>
       </div>
       <div class="sim-stage" style="--ph-pos: 46.15;">
+        <svg class="cable-svg" viewBox="0 0 900 470" preserveAspectRatio="none" aria-hidden="true">
+          <path class="cable-path" id="cablePath" d="M 120 110 C 210 140, 250 250, 370 205 S 470 160, 505 220" />
+        </svg>
         <div class="ph-panel">
+          <div class="ph-meter">
+            <div class="ph-meter-title">pH meter</div>
+            <div class="ph-meter-value" id="phReadout">7.0</div>
+          </div>
           <div class="ph-label">pH</div>
           <div class="acid-basic acid">acid</div>
           <div class="acid-basic basic">basic</div>
@@ -497,15 +589,20 @@ def render_ph_equilibrium_simulator() -> None:
 
         <div class="center-scene">
           <div class="drop-controls">
-            <button class="drop-button" id="acidBtn" type="button">acid</button>
-            <button class="drop-button" id="baseBtn" type="button">alkaline</button>
+            <button class="drop-button" id="acidBtn" type="button">
+              <span class="pipette-icon"><span class="pipette-bulb"></span></span>
+              <span>acid</span>
+            </button>
+            <button class="drop-button" id="baseBtn" type="button">
+              <span class="pipette-icon"><span class="pipette-bulb"></span></span>
+              <span>alkaline</span>
+            </button>
           </div>
           <div class="drop" id="drop"></div>
           <div class="beaker-wrap">
-            <div class="probe"></div>
+            <div class="probe" id="probe" title="Drag the probe"></div>
             <div class="beaker">
               <div class="solution" id="solution"></div>
-              <div class="volume-label">about 50 mL</div>
             </div>
           </div>
         </div>
@@ -519,25 +616,13 @@ def render_ph_equilibrium_simulator() -> None:
             <div class="ion top">-</div>
             <div class="ion left">-</div>
             <div class="ion right">-</div>
+            <div class="ion-label h"><b>H+</b><span id="hConc"></span> mM</div>
+            <div class="ion-label hcro4"><b>HCrO4-</b><span id="hcro4Conc"></span> mM</div>
+            <div class="ion-label cro4"><b>CrO4^2-</b><span id="cro4Conc"></span> mM</div>
+            <div class="ion-label cr2o7"><b>Cr2O7^2-</b><span id="cr2o7Conc"></span> mM</div>
           </div>
-          <table class="conc-table">
-            <thead>
-              <tr><th>species</th><th>mM</th><th>Cr share</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>H+</td><td id="hConc"></td><td>-</td></tr>
-              <tr><td>HCrO4-</td><td id="hcro4Conc"></td><td id="hcro4Share"></td></tr>
-              <tr><td>CrO4^2-</td><td id="cro4Conc"></td><td id="cro4Share"></td></tr>
-              <tr><td>Cr2O7^2-</td><td id="cr2o7Conc"></td><td id="cr2o7Share"></td></tr>
-            </tbody>
-          </table>
         </div>
-      </div>
-      <div class="sim-footer">
-        <div class="readout"><span>Current pH</span><b id="phReadout">7.0</b></div>
-        <div class="readout"><span>Color source</span><b id="colorSource">pH 7.0</b></div>
-        <div class="readout"><span>Total Cr(VI)</span><b>5.000 mM</b></div>
-        <div class="readout"><span>Drop step</span><b>0.5 pH</b></div>
+        <div class="range-note">pH is limited to 1.0-14.0. Solution color is visually enhanced from the 5 mM training colors.</div>
       </div>
 
       <script>
@@ -551,6 +636,12 @@ def render_ph_equilibrium_simulator() -> None:
         const stage = root.querySelector('.sim-stage');
         const solution = root.querySelector('#solution');
         const drop = root.querySelector('#drop');
+        const probe = root.querySelector('#probe');
+        const beakerWrap = root.querySelector('.beaker-wrap');
+        const cablePath = root.querySelector('#cablePath');
+        const acidBtn = root.querySelector('#acidBtn');
+        const baseBtn = root.querySelector('#baseBtn');
+        let probeX = -78;
 
         function clamp(value, min, max) {{
           return Math.max(min, Math.min(max, value));
@@ -573,6 +664,18 @@ def render_ph_equilibrium_simulator() -> None:
               return {{ rgb, source: `pH ${{value.toFixed(1)}}` }};
             }}
           }}
+        }}
+
+        function enhanceRgb(rgb, value) {{
+          const avg = (rgb[0] + rgb[1] + rgb[2]) / 3;
+          const saturation = 1.72;
+          let enhanced = rgb.map(v => avg + (v - avg) * saturation);
+          const acidity = clamp((7 - value) / 6, 0, 1);
+          const alkalinity = clamp((value - 7) / 7, 0, 1);
+          enhanced[0] += acidity * 30 + alkalinity * 6;
+          enhanced[1] += alkalinity * 30 + acidity * 2;
+          enhanced[2] -= 10 + acidity * 12 + alkalinity * 8;
+          return enhanced.map(v => Math.round(clamp(v, 0, 255)));
         }}
 
         function solveSpecies(value) {{
@@ -598,24 +701,29 @@ def render_ph_equilibrium_simulator() -> None:
           const phPos = ((ph - 1) / 13) * 100;
           stage.style.setProperty('--ph-pos', phPos.toFixed(2));
           root.querySelector('#phReadout').textContent = ph.toFixed(1);
+          acidBtn.disabled = ph <= 1;
+          baseBtn.disabled = ph >= 14;
 
           const color = interpolateColor(ph);
-          const rgb = color.rgb.map(v => Math.round(v));
+          const rgb = enhanceRgb(color.rgb, ph);
           solution.style.background = `rgb(${{rgb[0]}}, ${{rgb[1]}}, ${{rgb[2]}})`;
-          root.querySelector('#colorSource').textContent = color.source;
 
           const s = solveSpecies(ph);
-          const hcro4Share = s.hcro4 / totalCr * 100;
-          const cro4Share = s.cro4 / totalCr * 100;
-          const cr2o7Share = 2 * s.cr2o7 / totalCr * 100;
-
           root.querySelector('#hConc').textContent = fmt(s.h);
           root.querySelector('#hcro4Conc').textContent = fmt(s.hcro4);
           root.querySelector('#cro4Conc').textContent = fmt(s.cro4);
           root.querySelector('#cr2o7Conc').textContent = fmt(s.cr2o7);
-          root.querySelector('#hcro4Share').textContent = hcro4Share.toFixed(1) + '%';
-          root.querySelector('#cro4Share').textContent = cro4Share.toFixed(1) + '%';
-          root.querySelector('#cr2o7Share').textContent = cr2o7Share.toFixed(1) + '%';
+        }}
+
+        function updateProbePosition(nextProbeX) {{
+          probeX = clamp(nextProbeX, -106, 72);
+          root.style.setProperty('--probe-x', `${{probeX}}px`);
+          root.style.setProperty('--probe-rot', `${{clamp(-probeX / 12, -12, 10)}}deg`);
+          const cableEndX = 505 + (probeX + 78);
+          cablePath.setAttribute(
+            'd',
+            `M 120 110 C 210 140, 250 250, 370 205 S ${{cableEndX - 35}} 160, ${{cableEndX}} 220`
+          );
         }}
 
         function addDrop(delta, color) {{
@@ -629,11 +737,32 @@ def render_ph_equilibrium_simulator() -> None:
 
         root.querySelector('#acidBtn').addEventListener('click', () => addDrop(-0.5, '#db4b3f'));
         root.querySelector('#baseBtn').addEventListener('click', () => addDrop(0.5, '#2f80ed'));
+
+        let dragging = false;
+        probe.addEventListener('pointerdown', event => {{
+          dragging = true;
+          probe.setPointerCapture(event.pointerId);
+        }});
+        probe.addEventListener('pointermove', event => {{
+          if (!dragging) return;
+          const rect = beakerWrap.getBoundingClientRect();
+          const raw = event.clientX - rect.left - rect.width / 2;
+          updateProbePosition(raw);
+        }});
+        probe.addEventListener('pointerup', event => {{
+          dragging = false;
+          probe.releasePointerCapture(event.pointerId);
+        }});
+        probe.addEventListener('pointercancel', event => {{
+          dragging = false;
+          probe.releasePointerCapture(event.pointerId);
+        }});
+        updateProbePosition(probeX);
         update();
       </script>
     </div>
     """
-    components.html(html, height=620, scrolling=False)
+    components.html(html, height=650, scrolling=False)
 
 
 def render_introduction() -> None:
