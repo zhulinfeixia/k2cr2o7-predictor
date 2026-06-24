@@ -21,6 +21,78 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown(
+    """
+    <style>
+      section[data-testid="stSidebar"] {
+        background: #101820;
+        border-right: 1px solid #2b3b46;
+      }
+      section[data-testid="stSidebar"] > div {
+        background:
+          linear-gradient(135deg, rgba(38, 198, 180, .08), transparent 34%),
+          #101820;
+      }
+      section[data-testid="stSidebar"] h1,
+      section[data-testid="stSidebar"] h2,
+      section[data-testid="stSidebar"] h3,
+      section[data-testid="stSidebar"] p,
+      section[data-testid="stSidebar"] label,
+      section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: #eef6f7;
+      }
+      section[data-testid="stSidebar"] h1 {
+        font-family: "Segoe UI", sans-serif;
+        font-size: 1.55rem;
+        letter-spacing: 0;
+        padding-bottom: .55rem;
+        border-bottom: 1px solid #31434e;
+      }
+      section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: #a8bbc3;
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] {
+        gap: .55rem;
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] > label {
+        min-height: 48px;
+        margin: 0;
+        padding: .72rem .8rem;
+        border: 1px solid #30434d;
+        border-radius: 7px;
+        background: #17232c;
+        transition: border-color .18s ease, background .18s ease, transform .18s ease;
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] > label:hover {
+        border-color: #4dc8bd;
+        background: #1c2d35;
+        transform: translateX(2px);
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {
+        border-color: #57d3c7;
+        background: linear-gradient(90deg, rgba(38, 198, 180, .22), #1a2a33 72%);
+        box-shadow: inset 3px 0 0 #57d3c7, 0 5px 16px rgba(0, 0, 0, .18);
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {
+        border-color: #68808a !important;
+        background: #22323b !important;
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) > div:first-child {
+        border-color: #91eee5 !important;
+        background: #57d3c7 !important;
+      }
+      section[data-testid="stSidebar"] [role="radiogroup"] [data-testid="stMarkdownContainer"] p {
+        font-size: .94rem;
+        font-weight: 650;
+      }
+      section[data-testid="stSidebar"] hr {
+        border-color: #30434d;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 CONTENT_DIR = Path(__file__).parent / "content"
 INTRODUCTION_FILE = CONTENT_DIR / "knowledge_summary.md"
@@ -542,13 +614,16 @@ def render_ph_equilibrium_simulator() -> None:
         .ion-label.cro4 {{ left: 22px; top: 230px; }}
         .ion-label.cr2o7 {{ right: 18px; top: 230px; }}
         .range-note {{
-          position: absolute;
-          left: 50%;
-          bottom: 4px;
-          transform: translateX(-50%);
+          position: relative;
+          z-index: 8;
+          margin-top: 32px;
+          padding: 11px 12px 0;
+          border-top: 1px solid #e4e7ec;
+          background: #ffffff;
+          text-align: center;
           color: var(--muted);
           font-size: 12px;
-          white-space: nowrap;
+          line-height: 1.45;
         }}
         @media (max-width: 820px) {{
           .sim-stage {{
@@ -616,8 +691,8 @@ def render_ph_equilibrium_simulator() -> None:
             <div class="ion-label cr2o7"><b>Cr2O7^2-</b><span id="cr2o7Conc"></span> mM</div>
           </div>
         </div>
-        <div class="range-note">pH is limited to 1.0-14.0. Solution color is visually enhanced from the 5 mM training colors.</div>
       </div>
+      <div class="range-note">pH is limited to 1.0-14.0. Solution color is visually enhanced from the 5 mM training colors.</div>
 
       <script>
         const colorPoints = {color_points_js};
@@ -679,7 +754,10 @@ def render_ph_equilibrium_simulator() -> None:
           const a = 2 * kDimer / 1000;
           const b = 1 + chromateFactor;
           const c = -totalCr;
-          const hcro4 = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+          const discriminantRoot = Math.sqrt(b * b - 4 * a * c);
+          // Stable positive root. The direct "-b + sqrt(...)" form loses
+          // precision at high pH because both terms become nearly equal.
+          const hcro4 = (-2 * c) / (b + discriminantRoot);
           const cro4 = chromateFactor * hcro4;
           const cr2o7 = kDimer * hcro4 * hcro4 / 1000;
           const h = hM * 1000;
