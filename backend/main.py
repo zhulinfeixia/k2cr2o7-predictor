@@ -1,298 +1,289 @@
 """
-FastAPI 后端主入口
-提供 /predict 接口和模型信息接口
+FastAPI backend for chromium(VI) species prediction.
 """
 
 import base64
-import io
-from typing import Optional
+import logging
+import os
+from typing import Any, Dict, List, Literal, Optional
 
-import numpy as np
+import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from image_processor import preprocess_image, ImagePreprocessor
-from model import get_predictor, ConcentrationPredictor
+from image_processor import preprocess_image
+from species_model import get_species_predictor
 
-# 启动时预加载模型，捕获错误
-import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-try:
-    logger.info("启动时预加载模型...")
-    _predictor = get_predictor()
-    logger.info("模型预加载成功!")
-except Exception as e:
-    logger.error(f"模型预加载失败: {e}")
-    import traceback
-    logger.error(f"错误详情: {traceback.format_exc()}")
-    _predictor = None
+LLM_API_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
-# 创建 FastAPI 应用
+
+try:
+    logger.info("Preloading deployed species model...")
+    _species_predictor = get_species_predictor()
+    logger.info("Species model loaded.")
+except Exception as exc:
+    logger.error("Species model preload failed: %s", exc, exc_info=True)
+    _species_predictor = None
+
+
 app = FastAPI(
-    title="重铬酸钾浓度预测 API",
-    description="基于机器学习的重铬酸钾溶液浓度预测服务",
-    version="1.0.0"
+    title="K2Cr2O7 Species Prediction API",
+    description="ML species prediction with chromium(VI) equilibrium calculation.",
+    version="2.0.0",
 )
 
-# 配置 CORS（允许前端跨域访问）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制为具体域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ============ 数据模型 ============
-
 class PredictRequest(BaseModel):
-    """预测请求体"""
-    ph: float = Field(..., ge=0, le=14, description="pH 值 (0-14)")
-    image_base64: str = Field(..., description="Base64 编码的图像数据")
+    ph: float = Field(..., ge=0, le=14, description="pH value")
+    image_base64: str = Field(..., description="Base64 encoded image")
 
 
 class PredictResponse(BaseModel):
-    """预测响应体"""
-    concentration: float = Field(..., description="预测浓度 (mM)")
-    confidence: float = Field(..., ge=0, le=1, description="置信度 (0-1)")
-    features_used: dict = Field(..., description="使用的特征值")
-    warnings: list = Field(default=[], description="警告信息")
-    success: bool = Field(..., description="是否成功")
-    message: str = Field(default="", description="附加信息")
-
-
-class ModelInfoResponse(BaseModel):
-    """模型信息响应体"""
-    model_type: Optional[str]
-    feature_count: int
-    features: list
-    valid_ph_range: tuple
-    valid_concentration_range: tuple
-    n_estimators: Optional[int] = None
-    feature_importances: Optional[dict] = None
+    concentration: float = Field(..., description="Estimated total Cr(VI), mM")
+    confidence: float = Field(..., ge=0, le=1)
+    features_used: Dict[str, Any]
+    species_concentrations: Dict[str, float]
+    species_model_info: Dict[str, Any]
+    warnings: List[str] = []
+    success: bool
+    message: str = ""
 
 
 class HealthResponse(BaseModel):
-    """健康检查响应"""
     status: str
     model_loaded: bool
+    chat_configured: bool
 
 
-# ============ 路由 ============
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str = Field(..., min_length=1)
 
-@app.get("/", tags=["根路径"])
-async def root():
-    """根路径 - 返回 API 信息"""
+
+class ChatRequest(BaseModel):
+    prompt: str = Field(..., min_length=1)
+    messages: List[ChatMessage] = []
+    mode: str = Field(default="query")
+    prediction_context: Dict[str, Any] = {}
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    configured: bool
+    model: Optional[str] = None
+
+
+def validate_features(features_dict: Dict[str, Any], ph: float) -> List[str]:
+    errors: List[str] = []
+    required = set(get_species_predictor().FEATURE_ORDER[1:])
+    missing = required - set(features_dict.keys())
+    if missing:
+        errors.append(f"Missing image features: {sorted(missing)}")
+    if not isinstance(ph, (int, float)):
+        errors.append("pH must be numeric.")
+    elif ph < 0 or ph > 14:
+        errors.append("pH must be between 0 and 14.")
+    for key, value in features_dict.items():
+        if not isinstance(value, (int, float)):
+            errors.append(f"Feature {key} must be numeric.")
+            break
+    return errors
+
+
+def build_features_used(preprocess_result: Dict[str, Any], ph: float) -> Dict[str, Any]:
+    features = preprocess_result["features_dict"]
     return {
-        "name": "重铬酸钾浓度预测 API",
-        "version": "1.0.0",
-        "docs_url": "/docs",
-        "endpoints": {
-            "predict": "/predict",
-            "health": "/health",
-            "model_info": "/model/info"
-        }
+        "ph": ph,
+        "rgb": [round(features["R"], 2), round(features["G"], 2), round(features["B"], 2)],
+        "hsv": [round(features["H"], 2), round(features["S"], 2), round(features["V"], 2)],
+        "lab": [round(features["L"], 2), round(features["a"], 2), round(features["b"], 2)],
+        "ratios": {
+            "R_over_G": round(features["R_over_G"], 4),
+            "R_over_B": round(features["R_over_B"], 4),
+            "G_over_B": round(features["G_over_B"], 4),
+            "R_ratio": round(features["R_ratio"], 4),
+            "G_ratio": round(features["G_ratio"], 4),
+            "B_ratio": round(features["B_ratio"], 4),
+        },
     }
 
 
-@app.get("/health", response_model=HealthResponse, tags=["健康检查"])
-async def health_check():
-    """健康检查接口"""
+def run_prediction(image_bytes: bytes, ph: float) -> PredictResponse:
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image file is empty.")
+
     try:
-        predictor = get_predictor()
-        model_loaded = predictor.main_model is not None
-        return HealthResponse(
-            status="healthy",
-            model_loaded=model_loaded
-        )
-    except Exception as e:
-        logger.error(f"健康检查失败: {e}")
-        return HealthResponse(
-            status=f"unhealthy: {str(e)}",
-            model_loaded=False
-        )
+        preprocess_result = preprocess_image(image_bytes, ph)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Image processing failed: {exc}") from exc
+
+    validation_errors = validate_features(preprocess_result["features_dict"], ph)
+    if validation_errors:
+        raise HTTPException(status_code=400, detail="; ".join(validation_errors))
+
+    species_predictor = get_species_predictor()
+    species_result = species_predictor.predict(preprocess_result["feature_vector"])
+    species = species_result["species_concentrations"]
+
+    return PredictResponse(
+        concentration=round(species["estimated_total_cr_mM"], 4),
+        confidence=round(species_result["confidence"], 4),
+        features_used=build_features_used(preprocess_result, ph),
+        species_concentrations={key: round(float(value), 6) for key, value in species.items()},
+        species_model_info=species_result["model_info"],
+        warnings=species_result["warnings"],
+        success=True,
+        message="Species prediction completed.",
+    )
 
 
-@app.get("/model/info", response_model=ModelInfoResponse, tags=["模型信息"])
-async def model_info():
-    """获取模型信息"""
+def system_prompt_for(mode: str, prediction_context: Dict[str, Any]) -> str:
+    base = (
+        "You are a careful chemistry assistant for a potassium dichromate web app. "
+        "Answer in the user's language. Keep explanations grounded in chromium(VI) "
+        "equilibria, color features, pH, and model uncertainty. Do not invent hidden "
+        "training data or claim laboratory certainty."
+    )
+    if mode == "prediction_analysis":
+        return (
+            base
+            + "\nThe user is asking about a model prediction result. Use the supplied "
+            "prediction context, explain reliability and possible experimental checks."
+            f"\nPrediction context: {prediction_context}"
+        )
+    return base
+
+
+@app.get("/")
+async def root() -> Dict[str, Any]:
+    return {
+        "name": "K2Cr2O7 Species Prediction API",
+        "version": "2.0.0",
+        "endpoints": {
+            "predict": "/predict",
+            "predict_base64": "/predict/base64",
+            "chat": "/chat",
+            "health": "/health",
+            "model_info": "/model/info",
+        },
+    }
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
     try:
-        predictor = get_predictor()
-        info = predictor.get_model_info()
-        return ModelInfoResponse(**info)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取模型信息失败: {str(e)}")
+        species_predictor = get_species_predictor()
+        model_loaded = species_predictor.model is not None
+        return HealthResponse(
+            status="healthy" if model_loaded else "unhealthy",
+            model_loaded=model_loaded,
+            chat_configured=bool(LLM_API_KEY),
+        )
+    except Exception as exc:
+        logger.error("Health check failed: %s", exc, exc_info=True)
+        return HealthResponse(status=f"unhealthy: {exc}", model_loaded=False, chat_configured=bool(LLM_API_KEY))
 
 
-@app.post("/predict", response_model=PredictResponse, tags=["预测"])
+@app.get("/model/info")
+async def model_info() -> Dict[str, Any]:
+    try:
+        return get_species_predictor().get_model_info()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load model info: {exc}") from exc
+
+
+@app.get("/species/model/info")
+async def species_model_info() -> Dict[str, Any]:
+    return await model_info()
+
+
+@app.post("/predict", response_model=PredictResponse)
 async def predict(
-    ph: float = Form(..., ge=0, le=14, description="pH 值 (0-14)"),
-    image: UploadFile = File(..., description="比色皿图像文件")
-):
-    """
-    预测重铬酸钾浓度
-    
-    - **ph**: 溶液的 pH 值
-    - **image**: 比色皿照片（支持 JPG, PNG 格式）
-    
-    返回预测的浓度值和置信度
-    """
+    ph: float = Form(..., ge=0, le=14, description="pH value"),
+    image: UploadFile = File(..., description="ROI image file"),
+) -> PredictResponse:
     try:
-        # 1. 读取图像数据
         image_bytes = await image.read()
-        
-        if len(image_bytes) == 0:
-            raise HTTPException(status_code=400, detail="图像文件为空")
-        
-        # DEBUG: 检查接收的图片尺寸
-        import cv2
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is not None:
-            logger.info(f"DEBUG - 接收图片尺寸: {img.shape}")
-        logger.info(f"DEBUG - 接收图片字节数: {len(image_bytes)} bytes")
-        
-        # 2. 图像预处理
-        try:
-            preprocess_result = preprocess_image(image_bytes, ph)
-            
-            # DEBUG: 打印提取的特征值
-            logger.info("DEBUG - 预处理方式: 前端ROI + 光照标准化")
-            logger.info(f"DEBUG - 提取的特征: {preprocess_result['features_dict']}")
-            logger.info(f"DEBUG - pH值: {ph}")
-            logger.info(f"DEBUG - 特征向量: {preprocess_result['feature_vector'][0]}")
-            
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"图像处理失败: {str(e)}")
-        
-        # 3. 获取预测器并执行预测
-        predictor = get_predictor()
-        feature_vector = preprocess_result['feature_vector']
-        
-        # 验证输入
-        validation_errors = predictor.validate_input(
-            preprocess_result['features_dict'], ph
-        )
-        if validation_errors:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"输入验证失败: {'; '.join(validation_errors)}"
-            )
-        
-        # 执行预测
-        prediction_result = predictor.predict(feature_vector)
-        
-        # 4. 构建响应
-        features_used = {
-            "ph": ph,
-            "rgb": [
-                round(preprocess_result['features_dict']['R'], 2),
-                round(preprocess_result['features_dict']['G'], 2),
-                round(preprocess_result['features_dict']['B'], 2)
-            ],
-            "hsv": [
-                round(preprocess_result['features_dict']['H'], 2),
-                round(preprocess_result['features_dict']['S'], 2),
-                round(preprocess_result['features_dict']['V'], 2)
-            ],
-            "lab": [
-                round(preprocess_result['features_dict']['L'], 2),
-                round(preprocess_result['features_dict']['a'], 2),
-                round(preprocess_result['features_dict']['b'], 2)
-            ]
-        }
-        
-        return PredictResponse(
-            concentration=round(prediction_result['concentration'], 4),
-            confidence=round(prediction_result['confidence'], 4),
-            features_used=features_used,
-            warnings=prediction_result['warnings'],
-            success=True,
-            message="预测成功"
-        )
-        
+        return run_prediction(image_bytes, ph)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"预测失败: {str(e)}")
+    except Exception as exc:
+        logger.error("Prediction failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
 
 
-@app.post("/predict/base64", response_model=PredictResponse, tags=["预测"])
-async def predict_base64(request: PredictRequest):
-    """
-    使用 Base64 编码图像预测浓度
-    
-    适合无法直接上传文件的客户端使用
-    """
+@app.post("/predict/base64", response_model=PredictResponse)
+async def predict_base64(request: PredictRequest) -> PredictResponse:
     try:
-        # 解码 Base64 图像
-        try:
-            image_bytes = base64.b64decode(request.image_base64)
-        except Exception:
-            raise HTTPException(status_code=400, detail="无效的 Base64 图像数据")
-        
-        if len(image_bytes) == 0:
-            raise HTTPException(status_code=400, detail="图像数据为空")
-        
-        # 图像预处理
-        preprocess_result = preprocess_image(image_bytes, request.ph)
-        
-        # 执行预测
-        predictor = get_predictor()
-        feature_vector = preprocess_result['feature_vector']
-        
-        prediction_result = predictor.predict(feature_vector)
-        
-        features_used = {
-            "ph": request.ph,
-            "rgb": [
-                round(preprocess_result['features_dict']['R'], 2),
-                round(preprocess_result['features_dict']['G'], 2),
-                round(preprocess_result['features_dict']['B'], 2)
-            ],
-            "hsv": [
-                round(preprocess_result['features_dict']['H'], 2),
-                round(preprocess_result['features_dict']['S'], 2),
-                round(preprocess_result['features_dict']['V'], 2)
-            ],
-            "lab": [
-                round(preprocess_result['features_dict']['L'], 2),
-                round(preprocess_result['features_dict']['a'], 2),
-                round(preprocess_result['features_dict']['b'], 2)
-            ]
-        }
-        
-        return PredictResponse(
-            concentration=round(prediction_result['concentration'], 4),
-            confidence=round(prediction_result['confidence'], 4),
-            features_used=features_used,
-            warnings=prediction_result['warnings'],
-            success=True,
-            message="预测成功"
+        image_bytes = base64.b64decode(request.image_base64)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data.") from exc
+    return run_prediction(image_bytes, request.ph)
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    if not LLM_API_KEY:
+        return ChatResponse(
+            reply=(
+                "大模型接口代码已经接好，但后端还没有配置 API key。"
+                "请在部署环境中设置 LLM_API_KEY，并按需要设置 LLM_BASE_URL 和 LLM_MODEL。"
+            ),
+            configured=False,
+            model=None,
         )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"预测失败: {str(e)}")
 
+    upstream_messages = [
+        {"role": "system", "content": system_prompt_for(request.mode, request.prediction_context)}
+    ]
+    upstream_messages.extend({"role": m.role, "content": m.content} for m in request.messages[-12:])
+    upstream_messages.append({"role": "user", "content": request.prompt})
 
-# ============ 启动入口 ============
+    try:
+        response = requests.post(
+            LLM_BASE_URL,
+            headers={
+                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": LLM_MODEL,
+                "messages": upstream_messages,
+                "temperature": 0.3,
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        reply = data["choices"][0]["message"]["content"]
+        return ChatResponse(reply=reply, configured=True, model=LLM_MODEL)
+    except Exception as exc:
+        logger.error("Chat request failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Chat provider request failed: {exc}") from exc
+
 
 if __name__ == "__main__":
     import uvicorn
-    
-    print("启动重铬酸钾浓度预测 API 服务...")
-    print("访问 http://localhost:8000/docs 查看 API 文档")
-    
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
     )

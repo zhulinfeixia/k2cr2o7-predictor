@@ -195,7 +195,11 @@ cython_debug/
 private_training/
 training/
 outputs/
+spreadsheet_build/
 node_modules/
+
+# Deployment-excluded local artifacts live outside this repo.
+deployment_excluded_artifacts_*/
 
 # PyPI configuration file
 .pypirc
