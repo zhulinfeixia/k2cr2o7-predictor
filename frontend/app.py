@@ -990,7 +990,7 @@ def render_sidebar(api_ok: bool) -> str:
         module = st.radio(
             "Module",
             ["Introduction", "Query", "Model Prediction"],
-            index=2,
+            index=0,
         )
 
         if st.session_state.history:
